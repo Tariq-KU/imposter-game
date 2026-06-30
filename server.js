@@ -220,6 +220,17 @@ io.on('connection', (socket) => {
     io.to(roomCode.toUpperCase()).emit('imposterRevealed', imposterNames);
   });
 
+  socket.on('resetScores', (roomCode) => {
+    const room = rooms[roomCode.toUpperCase()];
+    if (!room) return;
+    
+    // Reset all player scores to 0
+    room.players.forEach(p => p.score = 0);
+    
+    // Sync the updated scores immediately to the lobby
+    io.to(roomCode.toUpperCase()).emit('roomUpdated', { players: room.players });
+  });
+
   socket.on('resetGame', (roomCode) => {
     const room = rooms[roomCode.toUpperCase()];
     if (!room) return;
