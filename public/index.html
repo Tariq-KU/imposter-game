@@ -16,18 +16,25 @@
     button:hover { background-color: #00875f; }
     .secondary-btn { background-color: #29292e; border: 1px solid #323238; }
     .secondary-btn:hover { background-color: #323238; }
+    .reveal-btn { background-color: #8257e5; margin-top: 20px; }
+    .reveal-btn:hover { background-color: #6a45bd; }
     ul { list-style: none; padding: 0; text-align: left; background: #121214; border-radius: 6px; padding: 10px; }
     li { padding: 8px; border-bottom: 1px solid #29292e; display: flex; justify-content: space-between; }
     li:last-child { border-bottom: none; }
     .role-box { padding: 20px; border-radius: 6px; margin: 20px 0; font-size: 24px; font-weight: bold; letter-spacing: 1px; }
     .role-imposter { background-color: #f75a68; color: #ffffff; }
     .role-crewmate { background-color: #00b37e; color: #ffffff; }
+    .role-hidden { background-color: #323238; color: #ffffff; border: 1px dashed #8d8d99; }
     .error { color: #f75a68; margin: 10px 0; font-size: 14px; }
-    .host-tag { background: #8257e5; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }</style>
+    .host-tag { background: #8257e5; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+    .reveal-banner { background-color: #f75a68; padding: 15px; border-radius: 6px; margin: 20px 0; animation: pop 0.4s ease-out; }
+    @keyframes pop { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+  </style>
 </head>
 <body>
 
   <div class="card">
+    <!-- Screen 1: Welcome / Join Setup -->
     <div id="setup-screen">
       <h1>Imposter Game</h1>
       <input type="text" id="player-name" placeholder="Enter Your Name" maxlength="15">
@@ -38,53 +45,242 @@
       <div id="setup-error" class="error"></div>
     </div>
 
+    <!-- Screen 2: Waiting Lobby -->
     <div id="lobby-screen" class="hidden">
       <h2>Room Code: <span id="display-room-code" style="color: #8257e5;">----</span></h2>
       <div style="text-align: left; margin-bottom: 5px; font-size: 14px; color: #8d8d99;">Players Joined:</div>
       <ul id="player-list"></ul>
 
+      <!-- Host Controls Panel -->
       <div id="host-controls" class="hidden">
-        <label for="category-select" style="display:block; text-align:left; margin-top:15px; font-size:14px;">Select Category:</label>
+        <label for="mode-select" style="display:block; text-align:left; margin-top:15px; font-size:14px;">Game Mode:</label>
+        <select id="mode-select">
+          <option value="standard">Standard (Imposter knows they are imposter)</option>
+          <option value="hidden">Hidden Imposter (Everyone gets a word)</option>
+        </select>
+
+        <label for="category-select" style="display:block; text-align:left; margin-top:10px; font-size:14px;">Select Category:</label>
         <select id="category-select">
           <option value="anime">Anime Characters (Demon Slayer / AOT)</option>
           <option value="marvel_dc">Marvel / DC Characters</option>
           <option value="food">Food & Cuisine</option>
           <option value="animals">Animals</option>
           <option value="professions">Professions</option>
+          <option value="irl_people">Famous IRL People / Athletes</option>
         </select>
 
-        <label for="imposter-count" style="display:block; text-align:left; font-size:14px;">Number of Imposters:</label>
+        <label for="imposter-count" style="display:block; text-align:left; margin-top:10px; font-size:14px;">Number of Imposters:</label>
         <input type="number" id="imposter-count" value="1" min="1" max="5">
-
+        
         <button id="start-game-btn">Start Game</button>
       </div>
-
+      
       <div id="lobby-wait-msg" style="margin-top: 20px; color: #8d8d99; font-style: italic;">
         Waiting for the host to select settings and start...
       </div>
       <div id="lobby-error" class="error"></div>
     </div>
 
+    <!-- Screen 3: Active Game Word Reveal -->
     <div id="game-screen" class="hidden">
-      <h2>Your Role Assignment</h2>
+      <h2 id="role-title">Your Role Assignment</h2>
       <p>Category: <span id="game-category-reveal" style="font-weight: bold;">-</span></p>
-
+      
+      <!-- Role Box (Hidden in Hidden Mode) -->
       <div id="role-display-card" class="role-box"></div>
-
+      
+      <!-- Word Display -->
       <div id="word-display-area">
         <p style="color: #8d8d99;">Secret Word:</p>
         <h3 id="game-word-reveal" style="font-size: 28px; margin: 10px 0; color: #ffffff;">-</h3>
       </div>
 
-      <p style="font-size: 14px; color: #8d8d99; margin-top: 30px;">
-        No timers or rounds are enforced here. Start discussing whenever you are ready!
+      <!-- Result Banner (Hidden until reveal) -->
+      <div id="reveal-banner" class="hidden reveal-banner">
+        <h3 style="margin: 0;">The Imposter Was:</h3>
+        <h2 id="revealed-imposter-name" style="margin: 5px 0 0 0; color: #fff;">-</h2>
+        <p style="margin: 10px 0 0 0; font-size: 14px;">Imposter, guess the Crewmate word!</p>
+      </div>
+
+      <p id="game-instructions" style="font-size: 14px; color: #8d8d99; margin-top: 30px;">
+        Discuss your words!
       </p>
 
-      <button id="play-again-btn" class="hidden">Play Again (Host Only)</button>
+      <button id="reveal-imposter-btn" class="reveal-btn hidden">Reveal Imposter (Host Only)</button>
+      <button id="play-again-btn" class="secondary-btn hidden" style="margin-top: 15px;">Return to Lobby (Host Only)</button>
     </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/client.js"></script>
+  <script>
+    const socket = io();
+    let currentRoomCode = '';
+    let amIHost = false;
+    let currentGameMode = 'standard';
+
+    // DOM Elements
+    const setupScreen = document.getElementById('setup-screen');
+    const lobbyScreen = document.getElementById('lobby-screen');
+    const gameScreen = document.getElementById('game-screen');
+    const playerNameInput = document.getElementById('player-name');
+    const roomCodeInput = document.getElementById('room-code-input');
+    const setupError = document.getElementById('setup-error');
+    const lobbyError = document.getElementById('lobby-error');
+    const displayRoomCode = document.getElementById('display-room-code');
+    const playerList = document.getElementById('player-list');
+    const hostControls = document.getElementById('host-controls');
+    const lobbyWaitMsg = document.getElementById('lobby-wait-msg');
+    
+    // Game Elements
+    const gameCategoryReveal = document.getElementById('game-category-reveal');
+    const roleDisplayCard = document.getElementById('role-display-card');
+    const wordDisplayArea = document.getElementById('word-display-area');
+    const gameWordReveal = document.getElementById('game-word-reveal');
+    const gameInstructions = document.getElementById('game-instructions');
+    const revealImposterBtn = document.getElementById('reveal-imposter-btn');
+    const playAgainBtn = document.getElementById('play-again-btn');
+    const revealBanner = document.getElementById('reveal-banner');
+    const revealedImposterName = document.getElementById('revealed-imposter-name');
+
+    // --- Buttons ---
+    document.getElementById('create-room-btn').addEventListener('click', () => {
+      const name = playerNameInput.value.trim();
+      if (!name) return setupError.innerText = 'Please enter a name first.';
+      setupError.innerText = '';
+      socket.emit('createRoom', name);
+    });
+
+    document.getElementById('join-room-btn').addEventListener('click', () => {
+      const name = playerNameInput.value.trim();
+      const code = roomCodeInput.value.trim().toUpperCase();
+      if (!name) return setupError.innerText = 'Please enter a name first.';
+      if (!code) return setupError.innerText = 'Please enter a room code.';
+      setupError.innerText = '';
+      socket.emit('joinRoom', { roomCode: code, playerName: name });
+    });
+
+    document.getElementById('start-game-btn').addEventListener('click', () => {
+      const category = document.getElementById('category-select').value;
+      const imposterCount = document.getElementById('imposter-count').value;
+      const gameMode = document.getElementById('mode-select').value;
+      lobbyError.innerText = '';
+      socket.emit('startGame', { roomCode: currentRoomCode, category, imposterCount, gameMode });
+    });
+
+    revealImposterBtn.addEventListener('click', () => {
+      socket.emit('revealImposter', currentRoomCode);
+    });
+
+    playAgainBtn.addEventListener('click', () => {
+      socket.emit('resetGame', currentRoomCode);
+    });
+
+    // --- Socket Listeners ---
+    function handleLobbyEntry(code, players, isHostRole) {
+      currentRoomCode = code;
+      amIHost = isHostRole;
+      displayRoomCode.innerText = code;
+      setupScreen.classList.add('hidden');
+      gameScreen.classList.add('hidden');
+      lobbyScreen.classList.remove('hidden');
+      revealBanner.classList.add('hidden'); // Reset banner
+      
+      if (amIHost) {
+        hostControls.classList.remove('hidden');
+        lobbyWaitMsg.classList.add('hidden');
+      } else {
+        hostControls.classList.add('hidden');
+        lobbyWaitMsg.classList.remove('hidden');
+      }
+      updatePlayerList(players);
+    }
+
+    function updatePlayerList(players) {
+      const me = players.find(p => p.id === socket.id);
+      if (me) {
+        amIHost = me.isHost;
+        if (amIHost && !lobbyScreen.classList.contains('hidden')) {
+          hostControls.classList.remove('hidden');
+          lobbyWaitMsg.classList.add('hidden');
+        } else if (!amIHost) {
+          hostControls.classList.add('hidden');
+          if(!lobbyScreen.classList.contains('hidden')) lobbyWaitMsg.classList.remove('hidden');
+        }
+      }
+
+      playerList.innerHTML = '';
+      players.forEach((player) => {
+        const li = document.createElement('li');
+        li.innerText = player.name;
+        if (player.isHost) {
+          const span = document.createElement('span');
+          span.innerText = 'HOST';
+          span.className = 'host-tag';
+          li.appendChild(span);
+        }
+        playerList.appendChild(li);
+      });
+    }
+
+    socket.on('roomCreated', (data) => { handleLobbyEntry(data.roomCode, data.players, true); });
+    socket.on('roomUpdated', (data) => { updatePlayerList(data.players); });
+    socket.on('errorMsg', (msg) => { setupError.innerText = msg; lobbyError.innerText = msg; });
+
+    socket.on('gameStarted', ({ role, word, category, mode }) => {
+      lobbyScreen.classList.add('hidden');
+      gameScreen.classList.remove('hidden');
+      revealBanner.classList.add('hidden');
+      
+      gameCategoryReveal.innerText = category;
+      currentGameMode = mode;
+      
+      // Reset buttons
+      playAgainBtn.classList.add('hidden');
+      revealImposterBtn.classList.add('hidden');
+
+      if (mode === 'hidden') {
+        // HIDDEN MODE LOGIC
+        roleDisplayCard.className = 'hidden'; 
+        wordDisplayArea.classList.remove('hidden');
+        gameWordReveal.innerText = word;
+        gameInstructions.innerText = "Everyone has a word! One person has a DIFFERENT word. Describe yours carefully!";
+        
+        if (amIHost) {
+          revealImposterBtn.classList.remove('hidden');
+        }
+      } else {
+        // STANDARD MODE LOGIC
+        roleDisplayCard.classList.remove('hidden');
+        if (role === 'Imposter') {
+          roleDisplayCard.innerText = 'YOU ARE THE IMPOSTER!';
+          roleDisplayCard.className = 'role-box role-imposter';
+          wordDisplayArea.classList.add('hidden');
+        } else {
+          roleDisplayCard.innerText = 'YOU ARE CREWMATE';
+          roleDisplayCard.className = 'role-box role-crewmate';
+          wordDisplayArea.classList.remove('hidden');
+          gameWordReveal.innerText = word;
+        }
+        gameInstructions.innerText = "Discuss and find the Imposter!";
+        
+        if (amIHost) {
+          playAgainBtn.classList.remove('hidden');
+        }
+      }
+    });
+
+    socket.on('imposterRevealed', (imposterNames) => {
+      revealBanner.classList.remove('hidden');
+      revealedImposterName.innerText = imposterNames;
+      revealImposterBtn.classList.add('hidden');
+      if (amIHost) {
+        playAgainBtn.classList.remove('hidden');
+      }
+    });
+
+    socket.on('gameReset', ({ players }) => {
+      handleLobbyEntry(currentRoomCode, players, amIHost);
+    });
+  </script>
 </body>
 </html>
