@@ -136,7 +136,6 @@ io.on('connection', (socket) => {
 
       if (gameMode === 'hidden') {
         roleToSend = 'Hidden';
-        // Imposters get a different valid word, Crewmates get the main word
         wordToSend = isImposter ? hiddenImposterWord : crewmateWord;
       } else {
         roleToSend = isImposter ? 'Imposter' : 'Crewmate';
@@ -157,7 +156,7 @@ io.on('connection', (socket) => {
     const room = rooms[roomCode.toUpperCase()];
     if (!room) return;
 
-    // Update scores based on the host's input
+    // Update scores
     room.players.forEach(p => {
       if (pointsData[p.id]) {
         p.score += parseInt(pointsData[p.id]) || 0;
@@ -176,13 +175,16 @@ io.on('connection', (socket) => {
     const requestedImposters = parseInt(room.gameOptions.imposterCount);
     const gameMode = room.gameOptions.gameMode;
 
+    // Pick TWO distinct words for Hidden Mode, or just one for Standard
     const wordPool = [...categories[categoryToUse]].sort(() => 0.5 - Math.random());
     const crewmateWord = wordPool[0];
     const hiddenImposterWord = wordPool[1];
 
+    // Shuffle players to pick imposters
     const shuffledPlayers = [...room.players].sort(() => 0.5 - Math.random());
     const imposterIds = shuffledPlayers.slice(0, requestedImposters).map(p => p.id);
     
+    // Save imposters to room state for later reveal
     room.imposters = room.players.filter(p => imposterIds.includes(p.id));
 
     // Sync updated scores to everyone before starting
@@ -223,7 +225,10 @@ io.on('connection', (socket) => {
     if (!room) return;
     room.gameStarted = false;
     room.imposters = [];
-    room.players.forEach(p => p.score = 0); // Reset scores when ending the full session
+    
+    // The line that reset scores to zero has been removed!
+    // Returning to the lobby will now persist the scores across the session.
+    
     io.to(roomCode.toUpperCase()).emit('gameReset', { players: room.players });
   });
 
