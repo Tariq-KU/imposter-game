@@ -48,7 +48,7 @@
     <!-- Screen 2: Waiting Lobby -->
     <div id="lobby-screen" class="hidden">
       <h2>Room Code: <span id="display-room-code" style="color: #8257e5;">----</span></h2>
-      <div style="text-align: left; margin-bottom: 5px; font-size: 14px; color: #8d8d99;">Players Joined:</div>
+      <div style="text-align: left; margin-bottom: 5px; font-size: 14px; color: #8d8d99;">Players Joined (Scores):</div>
       <ul id="player-list"></ul>
 
       <!-- Host Controls Panel -->
@@ -107,7 +107,35 @@
       </p>
 
       <button id="reveal-imposter-btn" class="reveal-btn hidden">Reveal Imposter (Host Only)</button>
-      <button id="play-again-btn" class="secondary-btn hidden" style="margin-top: 15px;">Return to Lobby (Host Only)</button>
+      
+      <!-- Host Controls for Ending/Continuing -->
+      <div id="game-host-controls" class="hidden" style="margin-top: 15px; display: flex; gap: 10px; flex-direction: column;">
+        <button id="show-continue-panel-btn" style="margin: 0; background-color: #00b37e;">Continue Game (Award Points)</button>
+        <button id="play-again-btn" class="secondary-btn" style="margin: 0;">End Game & Return to Lobby</button>
+      </div>
+
+      <!-- Point Assignment Panel -->
+      <div id="continue-panel" class="hidden" style="margin-top: 20px; background: #29292e; padding: 15px; border-radius: 8px;">
+        <h3 style="margin-top: 0;">Award Points & Continue</h3>
+        <p style="font-size: 13px; color: #8d8d99; margin-bottom: 10px;">Give points based on performance.</p>
+        <div id="point-inputs-container" style="text-align: left; margin-bottom: 15px; max-height: 150px; overflow-y: auto;"></div>
+        
+        <label for="next-category-select" style="display:block; text-align:left; font-size:14px;">Next Category:</label>
+        <select id="next-category-select">
+          <option value="random">🎲 Random Category</option>
+          <option value="anime">Anime Characters (Demon Slayer / AOT)</option>
+          <option value="marvel_dc">Marvel / DC Characters</option>
+          <option value="food">Food & Cuisine</option>
+          <option value="animals">Animals</option>
+          <option value="professions">Professions</option>
+          <option value="irl_people">Famous IRL People / Athletes</option>
+        </select>
+        
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+          <button id="confirm-continue-btn" style="margin: 0;">Start Next Round</button>
+          <button id="cancel-continue-btn" class="secondary-btn" style="margin: 0;">Cancel</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -117,6 +145,7 @@
     let currentRoomCode = '';
     let amIHost = false;
     let currentGameMode = 'standard';
+    let currentPlayers = []; // Store players for points UI
 
     // DOM Elements
     const setupScreen = document.getElementById('setup-screen');
@@ -139,6 +168,12 @@
     const gameInstructions = document.getElementById('game-instructions');
     const revealImposterBtn = document.getElementById('reveal-imposter-btn');
     const playAgainBtn = document.getElementById('play-again-btn');
+    const showContinuePanelBtn = document.getElementById('show-continue-panel-btn');
+    const gameHostControls = document.getElementById('game-host-controls');
+    const continuePanel = document.getElementById('continue-panel');
+    const confirmContinueBtn = document.getElementById('confirm-continue-btn');
+    const cancelContinueBtn = document.getElementById('cancel-continue-btn');
+    const pointInputsContainer = document.getElementById('point-inputs-container');
     const revealBanner = document.getElementById('reveal-banner');
     const revealedImposterName = document.getElementById('revealed-imposter-name');
 
@@ -171,6 +206,37 @@
       socket.emit('revealImposter', currentRoomCode);
     });
 
+    showContinuePanelBtn.addEventListener('click', () => {
+      pointInputsContainer.innerHTML = '';
+      currentPlayers.forEach(p => {
+        const div = document.createElement('div');
+        div.style = 'display: flex; justify-content: space-between; margin-bottom: 8px; align-items: center;';
+        div.innerHTML = `<span style="font-size: 14px; color: #fff;">${p.name} <span style="color: #8d8d99; font-size: 12px;">(${p.score || 0} pts)</span></span>
+                         <input type="number" data-id="${p.id}" value="0" style="width: 70px; padding: 6px; margin: 0; background: #121214; border: 1px solid #323238; color: white; border-radius: 4px;">`;
+        pointInputsContainer.appendChild(div);
+      });
+      
+      continuePanel.classList.remove('hidden');
+      gameHostControls.classList.add('hidden');
+      revealImposterBtn.classList.add('hidden');
+    });
+
+    cancelContinueBtn.addEventListener('click', () => {
+      continuePanel.classList.add('hidden');
+      gameHostControls.classList.remove('hidden');
+    });
+
+    confirmContinueBtn.addEventListener('click', () => {
+      const inputs = pointInputsContainer.querySelectorAll('input');
+      const pointsData = {};
+      inputs.forEach(input => {
+        pointsData[input.getAttribute('data-id')] = parseInt(input.value) || 0;
+      });
+      const nextCategory = document.getElementById('next-category-select').value;
+      
+      socket.emit('continueGame', { roomCode: currentRoomCode, pointsData, nextCategory });
+    });
+
     playAgainBtn.addEventListener('click', () => {
       socket.emit('resetGame', currentRoomCode);
     });
@@ -183,7 +249,8 @@
       setupScreen.classList.add('hidden');
       gameScreen.classList.add('hidden');
       lobbyScreen.classList.remove('hidden');
-      revealBanner.classList.add('hidden'); // Reset banner
+      revealBanner.classList.add('hidden'); 
+      revealBanner.style.display = 'none'; // Force hide
       
       if (amIHost) {
         hostControls.classList.remove('hidden');
@@ -196,6 +263,7 @@
     }
 
     function updatePlayerList(players) {
+      currentPlayers = players; // Sync global state
       const me = players.find(p => p.id === socket.id);
       if (me) {
         amIHost = me.isHost;
@@ -211,7 +279,7 @@
       playerList.innerHTML = '';
       players.forEach((player) => {
         const li = document.createElement('li');
-        li.innerText = player.name;
+        li.innerHTML = `<span>${player.name} <span style="color: #00b37e; font-size: 13px; margin-left: 5px;">(${player.score || 0} pts)</span></span>`;
         if (player.isHost) {
           const span = document.createElement('span');
           span.innerText = 'HOST';
@@ -226,21 +294,29 @@
     socket.on('roomUpdated', (data) => { updatePlayerList(data.players); });
     socket.on('errorMsg', (msg) => { setupError.innerText = msg; lobbyError.innerText = msg; });
 
-    socket.on('gameStarted', ({ role, word, category, mode }) => {
+    socket.on('gameStarted', ({ role, word, category, mode, players }) => {
+      if (players) updatePlayerList(players); // Ensure points update on start
+
       lobbyScreen.classList.add('hidden');
       gameScreen.classList.remove('hidden');
       revealBanner.classList.add('hidden');
+      revealBanner.style.display = 'none';
+      continuePanel.classList.add('hidden');
       
       gameCategoryReveal.innerText = category;
       currentGameMode = mode;
       
       // Reset buttons
-      playAgainBtn.classList.add('hidden');
+      gameHostControls.classList.add('hidden');
       revealImposterBtn.classList.add('hidden');
 
       if (mode === 'hidden') {
         // HIDDEN MODE LOGIC
+        document.getElementById('role-title').innerText = "Your Secret Word";
+        roleDisplayCard.style.display = 'none'; // Force hide the role card
+        roleDisplayCard.innerText = ''; 
         roleDisplayCard.className = 'hidden'; 
+        
         wordDisplayArea.classList.remove('hidden');
         gameWordReveal.innerText = word;
         gameInstructions.innerText = "Everyone has a word! One person has a DIFFERENT word. Describe yours carefully!";
@@ -250,7 +326,10 @@
         }
       } else {
         // STANDARD MODE LOGIC
+        document.getElementById('role-title').innerText = "Your Role Assignment";
+        roleDisplayCard.style.display = 'block'; // Force show the role card
         roleDisplayCard.classList.remove('hidden');
+        
         if (role === 'Imposter') {
           roleDisplayCard.innerText = 'YOU ARE THE IMPOSTER!';
           roleDisplayCard.className = 'role-box role-imposter';
@@ -264,17 +343,25 @@
         gameInstructions.innerText = "Discuss and find the Imposter!";
         
         if (amIHost) {
-          playAgainBtn.classList.remove('hidden');
+          gameHostControls.classList.remove('hidden');
         }
       }
     });
 
     socket.on('imposterRevealed', (imposterNames) => {
       revealBanner.classList.remove('hidden');
-      revealedImposterName.innerText = imposterNames;
+      revealBanner.style.display = 'block'; // Force display it for everyone
+      
+      const myName = playerNameInput.value.trim();
+      if (imposterNames.includes(myName)) {
+        revealedImposterName.innerText = imposterNames + " (That's YOU!)";
+      } else {
+        revealedImposterName.innerText = imposterNames;
+      }
+      
       revealImposterBtn.classList.add('hidden');
       if (amIHost) {
-        playAgainBtn.classList.remove('hidden');
+        gameHostControls.classList.remove('hidden');
       }
     });
 
