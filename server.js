@@ -9,76 +9,97 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Serve static frontend files from the 'public' folder
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Game Categories Data
+// Expanded Game Categories Data
 const categories = {
   anime: [
-    "Tanjiro Kamado", "Nezuko Kamado", "Zenitsu Agatsuma", "Inosuke Hashibira",
-    "Giyu Tomioka", "Kyojuro Rengoku", "Muzan Kibutsuji", "Eren Yeager",
-    "Mikasa Ackerman", "Armin Arlert", "Levi Ackerman", "Reiner Braun"
+    // Strictly Demon Slayer & Attack on Titan
+    "Tanjiro Kamado", "Nezuko Kamado", "Zenitsu Agatsuma", "Inosuke Hashibira", 
+    "Giyu Tomioka", "Kyojuro Rengoku", "Tengen Uzui", "Muichiro Tokito",
+    "Mitsuri Kanroji", "Obanai Iguro", "Sanemi Shinazugawa", "Gyomei Himejima",
+    "Shinobu Kocho", "Muzan Kibutsuji", "Akaza", "Doma", "Kokushibo",
+    "Eren Yeager", "Mikasa Ackerman", "Armin Arlert", "Levi Ackerman", 
+    "Erwin Smith", "Reiner Braun", "Annie Leonhart", "Bertholdt Hoover", 
+    "Hange Zoe", "Zeke Yeager", "Historia Reiss", "Jean Kirstein", 
+    "Sasha Blouse", "Connie Springer", "Pieck Finger", "Porco Galliard"
   ],
   marvel_dc: [
-    "Batman", "Spider-Man", "Superman", "Iron Man", "Wonder Woman",
-    "Thor", "Joker", "Captain America", "The Flash", "Black Widow"
+    "Batman", "Superman", "Spider-Man", "Iron Man", "Wonder Woman", 
+    "Captain America", "Thor", "Hulk", "Black Widow", "The Flash", 
+    "Aquaman", "Green Lantern", "Wolverine", "Deadpool", "Doctor Strange", 
+    "Black Panther", "Ant-Man", "Scarlet Witch", "Vision", "Loki", 
+    "Thanos", "Joker", "Harley Quinn", "Lex Luthor", "Darkseid", 
+    "Magneto", "Professor X", "Daredevil", "The Punisher", "Venom"
   ],
   food: [
-    "Sushi", "Shawarma", "Burger", "Pizza", "Tacos",
-    "Biryani", "Ramen", "Steak", "Falafel", "Gelato"
+    "Sushi", "Shawarma", "Burger", "Pizza", "Tacos", 
+    "Biryani", "Ramen", "Steak", "Falafel", "Gelato",
+    "Croissant", "Pad Thai", "Lasagna", "Dim Sum", "Kebab",
+    "Fried Chicken", "Paella", "Burrito", "Mac and Cheese", "Pho",
+    "Butter Chicken", "Peking Duck", "Fish and Chips", "Hummus", "Tiramisu",
+    "Churros", "Cheesecake", "Pancakes", "Waffles", "Curry"
   ],
   animals: [
-    "Capybara", "Peregrine Falcon", "Great White Shark", "Snow Leopard",
-    "Lion", "Elephant", "Dolphin", "Kangaroo", "Gorilla", "Panda"
+    "Capybara", "Peregrine Falcon", "Great White Shark", "Snow Leopard", 
+    "Lion", "Elephant", "Dolphin", "Kangaroo", "Gorilla", "Panda",
+    "Tiger", "Giraffe", "Zebra", "Cheetah", "Orangutan", 
+    "Penguin", "Polar Bear", "Koala", "Rhinoceros", "Hippopotamus",
+    "Ostrich", "Sloth", "Meerkat", "Platypus", "Komodo Dragon",
+    "Bald Eagle", "Octopus", "Chameleon", "Otter", "Hedgehog"
   ],
   professions: [
-    "Neurosurgeon", "Astronaut", "Firefighter", "Pilot", "Chef",
-    "Lawyer", "Software Engineer", "Artist", "Journalist", "Private Investigator"
+    "Neurosurgeon", "Astronaut", "Firefighter", "Pilot", "Chef", 
+    "Lawyer", "Software Engineer", "Artist", "Journalist", "Private Investigator",
+    "Architect", "Dentist", "Detective", "Pharmacist", "Plumber",
+    "Electrician", "Veterinarian", "Mechanic", "Scientist", "Teacher",
+    "Actor", "Musician", "Photographer", "Writer", "Accountant",
+    "Psychologist", "Police Officer", "Paramedic", "Judge", "Magician"
+  ],
+  irl_people: [
+    "Cristiano Ronaldo", "Lionel Messi", "Elon Musk", "Barack Obama", 
+    "Gordon Ramsay", "LeBron James", "Taylor Swift", "Tom Cruise", 
+    "Nelson Mandela", "Albert Einstein", "Serena Williams", "Michael Jordan", 
+    "Bill Gates", "Mark Zuckerberg", "Dwayne 'The Rock' Johnson", "Leonardo DiCaprio", 
+    "Keanu Reeves", "Will Smith", "Jackie Chan", "David Beckham", 
+    "Usain Bolt", "Muhammad Ali", "Abraham Lincoln", "Winston Churchill", 
+    "Marilyn Monroe", "Oprah Winfrey", "Queen Elizabeth II", "Virat Kohli", 
+    "Roger Federer", "Rafael Nadal"
   ]
 };
 
-// In-memory room storage
 const rooms = {};
 
-// Helper function to generate a unique room code
-function generateRoomCode(){
+function generateRoomCode() {
   return Math.random().toString(36).substring(2, 6).toUpperCase();
 }
 
 io.on('connection', (socket) => {
-  console.log(`User connected: ${socket.id}`);
-
-  // 1. Create Room
   socket.on('createRoom', (playerName) => {
     const roomCode = generateRoomCode();
     rooms[roomCode] = {
       code: roomCode,
       players: [{ id: socket.id, name: playerName, isHost: true }],
-      gameStarted: false
+      gameStarted: false,
+      imposters: []
     };
     socket.join(roomCode);
     socket.emit('roomCreated', { roomCode, players: rooms[roomCode].players });
   });
 
-  // 2. Join Room
   socket.on('joinRoom', ({ roomCode, playerName }) => {
     const code = roomCode.toUpperCase();
     const room = rooms[code];
 
-    if (!room) {
-      return socket.emit('errorMsg', 'Room not found.');
-    }
-    if (room.gameStarted) {
-      return socket.emit('errorMsg', 'Game has already started.');
-    }
+    if (!room) return socket.emit('errorMsg', 'Room not found.');
+    if (room.gameStarted) return socket.emit('errorMsg', 'Game has already started.');
 
     room.players.push({ id: socket.id, name: playerName, isHost: false });
     socket.join(code);
     io.to(code).emit('roomUpdated', { players: room.players });
   });
 
-  // 3. Start Game (Host Only)
-  socket.on('startGame', ({ roomCode, category, imposterCount }) => {
+  socket.on('startGame', ({ roomCode, category, imposterCount, gameMode }) => {
     const room = rooms[roomCode.toUpperCase()];
     if (!room) return;
 
@@ -88,56 +109,73 @@ io.on('connection', (socket) => {
     if (requestedImposters >= numPlayers) {
       return socket.emit('errorMsg', 'Imposters must be fewer than total players.');
     }
-
     if (!categories[category]) {
       return socket.emit('errorMsg', 'Invalid category selected.');
     }
 
     room.gameStarted = true;
 
-    // Select a random secret word from the chosen category
-    const wordPool = categories[category];
-    const secretWord = wordPool[Math.floor(Math.random() * wordPool.length)];
+    // Pick TWO distinct words for Hidden Mode, or just one for Standard
+    const wordPool = [...categories[category]].sort(() => 0.5 - Math.random());
+    const crewmateWord = wordPool[0];
+    const hiddenImposterWord = wordPool[1];
 
-    // Shuffle players to pick random imposters
+    // Shuffle players to pick imposters
     const shuffledPlayers = [...room.players].sort(() => 0.5 - Math.random());
     const imposterIds = shuffledPlayers.slice(0, requestedImposters).map(p => p.id);
+    
+    // Save imposters to room state for later reveal
+    room.imposters = room.players.filter(p => imposterIds.includes(p.id));
 
-    // Send role information privately to each individual player's socket
     room.players.forEach((player) => {
       const isImposter = imposterIds.includes(player.id);
+      
+      let roleToSend = '';
+      let wordToSend = '';
+
+      if (gameMode === 'hidden') {
+        roleToSend = 'Hidden';
+        // Imposters get a different valid word, Crewmates get the main word
+        wordToSend = isImposter ? hiddenImposterWord : crewmateWord;
+      } else {
+        roleToSend = isImposter ? 'Imposter' : 'Crewmate';
+        wordToSend = isImposter ? 'UNKNOWN' : crewmateWord;
+      }
+
       io.to(player.id).emit('gameStarted', {
-        role: isImposter ? 'Imposter' : 'Crewmate',
-        word: isImposter ? 'UNKNOWN' : secretWord,
-        category: category.toUpperCase().replace('_', ' ')
+        role: roleToSend,
+        word: wordToSend,
+        category: category.toUpperCase().replace('_', ' '),
+        mode: gameMode
       });
     });
   });
 
-  // 4. Return to Lobby / Play Again
+  socket.on('revealImposter', (roomCode) => {
+    const room = rooms[roomCode.toUpperCase()];
+    if (!room) return;
+    const imposterNames = room.imposters.map(i => i.name).join(' & ');
+    io.to(roomCode.toUpperCase()).emit('imposterRevealed', imposterNames);
+  });
+
   socket.on('resetGame', (roomCode) => {
     const room = rooms[roomCode.toUpperCase()];
     if (!room) return;
     room.gameStarted = false;
+    room.imposters = [];
     io.to(roomCode.toUpperCase()).emit('gameReset', { players: room.players });
   });
 
-  // 5. Handle Disconnects
   socket.on('disconnect', () => {
     for (const code in rooms) {
       const room = rooms[code];
       const index = room.players.findIndex(p => p.id === socket.id);
       if (index !== -1) {
         const removedPlayer = room.players.splice(index, 1)[0];
-
-        // If room is empty, delete it
         if (room.players.length === 0) {
           delete rooms[code];
         } else {
-          // If the host left, assign a new host
-          if (removedPlayer.isHost) {
-            room.players[0].isHost = true;
-          }
+          if (removedPlayer.isHost) room.players[0].isHost = true;
           io.to(code).emit('roomUpdated', { players: room.players });
         }
         break;
