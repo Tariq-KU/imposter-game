@@ -74,6 +74,7 @@
         <input type="number" id="imposter-count" value="1" min="1" max="5">
         
         <button id="start-game-btn">Start Game</button>
+        <button id="reset-scores-btn" class="secondary-btn" style="margin-top: 10px; border-color: #f75a68; color: #f75a68;">Reset Scores to Zero</button>
       </div>
       
       <div id="lobby-wait-msg" style="margin-top: 20px; color: #8d8d99; font-style: italic;">
@@ -187,6 +188,7 @@
     const revealBanner = document.getElementById('reveal-banner');
     const revealedImposterName = document.getElementById('revealed-imposter-name');
     const gamePlayerList = document.getElementById('game-player-list');
+    const resetScoresBtn = document.getElementById('reset-scores-btn');
 
     // --- Buttons ---
     createRoomBtn.addEventListener('click', () => {
@@ -216,6 +218,12 @@
       const gameMode = document.getElementById('mode-select').value;
       lobbyError.innerText = '';
       socket.emit('startGame', { roomCode: currentRoomCode, category, imposterCount, gameMode });
+    });
+
+    resetScoresBtn.addEventListener('click', () => {
+      if (confirm('Are you sure you want to reset all player scores back to 0?')) {
+        socket.emit('resetScores', currentRoomCode);
+      }
     });
 
     revealImposterBtn.addEventListener('click', () => {
