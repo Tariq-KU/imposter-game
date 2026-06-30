@@ -57,11 +57,12 @@
         <label for="mode-select" style="display:block; text-align:left; margin-top:15px; font-size:14px;">Game Mode:</label>
         <select id="mode-select">
           <option value="standard">Standard (Imposter knows they are imposter)</option>
-          <option value="hidden">Hidden Imposter (Everyone gets a word)</option>
+          <option value="hidden">Hidden Imposter (No one knows if they are safe!)</option>
         </select>
 
         <label for="category-select" style="display:block; text-align:left; margin-top:10px; font-size:14px;">Select Category:</label>
         <select id="category-select">
+          <option value="random">🎲 Random Category</option>
           <option value="anime">Anime Characters (Demon Slayer / AOT)</option>
           <option value="marvel_dc">Marvel / DC Characters</option>
           <option value="food">Food & Cuisine</option>
@@ -81,6 +82,8 @@
         Waiting for the host to select settings and start...
       </div>
       <div id="lobby-error" class="error"></div>
+      
+      <button id="leave-lobby-btn" class="secondary-btn" style="margin-top: 15px; border-color: #f75a68; color: #f75a68;">Leave Room</button>
     </div>
 
     <!-- Screen 3: Active Game Word Reveal -->
@@ -144,6 +147,8 @@
         <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #e1e1e6; text-align: left;">Live Leaderboard</h3>
         <ul id="game-player-list" style="margin-bottom: 0;"></ul>
       </div>
+      
+      <button id="leave-game-btn" class="secondary-btn" style="margin-top: 15px; border-color: #f75a68; color: #f75a68;">Leave Game</button>
 
     </div>
   </div>
@@ -189,6 +194,8 @@
     const revealedImposterName = document.getElementById('revealed-imposter-name');
     const gamePlayerList = document.getElementById('game-player-list');
     const resetScoresBtn = document.getElementById('reset-scores-btn');
+    const leaveLobbyBtn = document.getElementById('leave-lobby-btn');
+    const leaveGameBtn = document.getElementById('leave-game-btn');
 
     // --- Buttons ---
     createRoomBtn.addEventListener('click', () => {
@@ -264,6 +271,29 @@
     playAgainBtn.addEventListener('click', () => {
       socket.emit('resetGame', currentRoomCode);
     });
+
+    function leaveCurrentRoom() {
+      if (currentRoomCode) {
+        socket.emit('leaveRoom', currentRoomCode);
+      }
+      
+      // Reset UI completely to the main menu setup screen
+      lobbyScreen.classList.add('hidden');
+      gameScreen.classList.add('hidden');
+      setupScreen.classList.remove('hidden');
+      
+      currentRoomCode = '';
+      amIHost = false;
+      
+      // Re-enable join/create buttons 
+      createRoomBtn.disabled = false;
+      createRoomBtn.innerText = 'Create New Game';
+      joinRoomBtn.disabled = false;
+      joinRoomBtn.innerText = 'Join Game';
+    }
+
+    leaveLobbyBtn.addEventListener('click', leaveCurrentRoom);
+    leaveGameBtn.addEventListener('click', leaveCurrentRoom);
 
     // --- Socket Listeners ---
     function handleLobbyEntry(code, players) {
