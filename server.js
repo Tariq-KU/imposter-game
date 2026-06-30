@@ -14,7 +14,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Expanded Game Categories Data
 const categories = {
   anime: [
-    // Strictly Demon Slayer & Attack on Titan
     "Tanjiro Kamado", "Nezuko Kamado", "Zenitsu Agatsuma", "Inosuke Hashibira", 
     "Giyu Tomioka", "Kyojuro Rengoku", "Tengen Uzui", "Muichiro Tokito",
     "Mitsuri Kanroji", "Obanai Iguro", "Sanemi Shinazugawa", "Gyomei Himejima",
@@ -79,9 +78,10 @@ io.on('connection', (socket) => {
     const roomCode = generateRoomCode();
     rooms[roomCode] = {
       code: roomCode,
-      players: [{ id: socket.id, name: playerName, isHost: true }],
+      players: [{ id: socket.id, name: playerName, isHost: true, score: 0 }],
       gameStarted: false,
-      imposters: []
+      imposters: [],
+      gameOptions: {}
     };
     socket.join(roomCode);
     socket.emit('roomCreated', { roomCode, players: rooms[roomCode].players });
@@ -94,7 +94,7 @@ io.on('connection', (socket) => {
     if (!room) return socket.emit('errorMsg', 'Room not found.');
     if (room.gameStarted) return socket.emit('errorMsg', 'Game has already started.');
 
-    room.players.push({ id: socket.id, name: playerName, isHost: false });
+    room.players.push({ id: socket.id, name: playerName, isHost: false, score: 0 });
     socket.join(code);
     io.to(code).emit('roomUpdated', { players: room.players });
   });
@@ -114,6 +114,7 @@ io.on('connection', (socket) => {
     }
 
     room.gameStarted = true;
+    room.gameOptions = { imposterCount, gameMode }; // Save for continue feature
 
     // Pick TWO distinct words for Hidden Mode, or just one for Standard
     const wordPool = [...categories[category]].sort(() => 0.5 - Math.random());
@@ -146,7 +147,66 @@ io.on('connection', (socket) => {
         role: roleToSend,
         word: wordToSend,
         category: category.toUpperCase().replace('_', ' '),
-        mode: gameMode
+        mode: gameMode,
+        players: room.players
+      });
+    });
+  });
+
+  socket.on('continueGame', ({ roomCode, pointsData, nextCategory }) => {
+    const room = rooms[roomCode.toUpperCase()];
+    if (!room) return;
+
+    // Update scores based on the host's input
+    room.players.forEach(p => {
+      if (pointsData[p.id]) {
+        p.score += parseInt(pointsData[p.id]) || 0;
+      }
+    });
+
+    // Determine Category
+    let categoryToUse = nextCategory;
+    if (categoryToUse === 'random') {
+      const catKeys = Object.keys(categories);
+      categoryToUse = catKeys[Math.floor(Math.random() * catKeys.length)];
+    } else if (!categories[categoryToUse]) {
+      return socket.emit('errorMsg', 'Invalid category selected.');
+    }
+
+    const requestedImposters = parseInt(room.gameOptions.imposterCount);
+    const gameMode = room.gameOptions.gameMode;
+
+    const wordPool = [...categories[categoryToUse]].sort(() => 0.5 - Math.random());
+    const crewmateWord = wordPool[0];
+    const hiddenImposterWord = wordPool[1];
+
+    const shuffledPlayers = [...room.players].sort(() => 0.5 - Math.random());
+    const imposterIds = shuffledPlayers.slice(0, requestedImposters).map(p => p.id);
+    
+    room.imposters = room.players.filter(p => imposterIds.includes(p.id));
+
+    // Sync updated scores to everyone before starting
+    io.to(roomCode.toUpperCase()).emit('roomUpdated', { players: room.players });
+
+    room.players.forEach((player) => {
+      const isImposter = imposterIds.includes(player.id);
+      let roleToSend = '';
+      let wordToSend = '';
+
+      if (gameMode === 'hidden') {
+        roleToSend = 'Hidden';
+        wordToSend = isImposter ? hiddenImposterWord : crewmateWord;
+      } else {
+        roleToSend = isImposter ? 'Imposter' : 'Crewmate';
+        wordToSend = isImposter ? 'UNKNOWN' : crewmateWord;
+      }
+
+      io.to(player.id).emit('gameStarted', {
+        role: roleToSend,
+        word: wordToSend,
+        category: categoryToUse.toUpperCase().replace('_', ' '),
+        mode: gameMode,
+        players: room.players
       });
     });
   });
@@ -163,6 +223,7 @@ io.on('connection', (socket) => {
     if (!room) return;
     room.gameStarted = false;
     room.imposters = [];
+    room.players.forEach(p => p.score = 0); // Reset scores when ending the full session
     io.to(roomCode.toUpperCase()).emit('gameReset', { players: room.players });
   });
 
