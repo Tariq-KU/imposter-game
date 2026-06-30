@@ -109,7 +109,12 @@ io.on('connection', (socket) => {
     if (requestedImposters >= numPlayers) {
       return socket.emit('errorMsg', 'Imposters must be fewer than total players.');
     }
-    if (!categories[category]) {
+    
+    let categoryToUse = category;
+    if (categoryToUse === 'random') {
+      const catKeys = Object.keys(categories);
+      categoryToUse = catKeys[Math.floor(Math.random() * catKeys.length)];
+    } else if (!categories[categoryToUse]) {
       return socket.emit('errorMsg', 'Invalid category selected.');
     }
 
@@ -117,7 +122,7 @@ io.on('connection', (socket) => {
     room.gameOptions = { imposterCount, gameMode }; // Save for continue feature
 
     // Pick TWO distinct words for Hidden Mode, or just one for Standard
-    const wordPool = [...categories[category]].sort(() => 0.5 - Math.random());
+    const wordPool = [...categories[categoryToUse]].sort(() => 0.5 - Math.random());
     const crewmateWord = wordPool[0];
     const hiddenImposterWord = wordPool[1];
 
@@ -145,7 +150,7 @@ io.on('connection', (socket) => {
       io.to(player.id).emit('gameStarted', {
         role: roleToSend,
         word: wordToSend,
-        category: category.toUpperCase().replace('_', ' '),
+        category: categoryToUse.toUpperCase().replace('_', ' '),
         mode: gameMode,
         players: room.players
       });
@@ -241,6 +246,26 @@ io.on('connection', (socket) => {
     // Returning to the lobby will now persist the scores across the session.
     
     io.to(roomCode.toUpperCase()).emit('gameReset', { players: room.players });
+  });
+
+  socket.on('leaveRoom', (roomCode) => {
+    const code = roomCode.toUpperCase();
+    const room = rooms[code];
+    if (room) {
+      const index = room.players.findIndex(p => p.id === socket.id);
+      if (index !== -1) {
+        const removedPlayer = room.players.splice(index, 1)[0];
+        socket.leave(code);
+        
+        if (room.players.length === 0) {
+          delete rooms[code];
+        } else {
+          // Reassign host if the host left
+          if (removedPlayer.isHost) room.players[0].isHost = true;
+          io.to(code).emit('roomUpdated', { players: room.players });
+        }
+      }
+    }
   });
 
   socket.on('disconnect', () => {
