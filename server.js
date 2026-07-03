@@ -5,7 +5,10 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  pingTimeout: 60000, // Increased to 60 seconds to stop instant mobile drops
+  pingInterval: 25000
+});
 
 const PORT = process.env.PORT || 3000;
 
