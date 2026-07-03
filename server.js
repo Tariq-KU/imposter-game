@@ -5,9 +5,20 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
+
+// Mobile browsers often pause JavaScript/network activity while the tab is hidden.
+// These grace periods prevent a temporary phone background/screen timeout from
+// being treated as an intentional leave.
+const DISCONNECT_GRACE_MS = 2 * 60 * 1000; // 2 minutes before host handoff
+const EMPTY_ROOM_TTL_MS = 10 * 60 * 1000; // 10 minutes before deleting an empty/offline room
+
 const io = new Server(server, {
-  pingTimeout: 60000, // Increased to 60 seconds to stop instant mobile drops
-  pingInterval: 25000
+  pingTimeout: 120000,
+  pingInterval: 25000,
+  connectionStateRecovery: {
+    maxDisconnectionDuration: EMPTY_ROOM_TTL_MS,
+    skipMiddlewares: true
+  }
 });
 
 const PORT = process.env.PORT || 3000;
@@ -70,301 +81,438 @@ const categories = {
   ]
 };
 
+
 const rooms = {};
+const playerDisconnectTimers = new Map();
+const roomCleanupTimers = new Map();
 
 function generateRoomCode() {
-  return Math.random().toString(36).substring(2, 6).toUpperCase();
+  let code;
+  do {
+    code = Math.random().toString(36).substring(2, 6).toUpperCase();
+  } while (rooms[code]);
+  return code;
+}
+
+function normalizeRoomCode(roomCode) {
+  return String(roomCode || '').trim().toUpperCase();
+}
+
+function playerTimerKey(code, playerId) {
+  return `${code}:${playerId}`;
+}
+
+function clearPlayerDisconnectTimer(code, playerId) {
+  const key = playerTimerKey(code, playerId);
+  const timer = playerDisconnectTimers.get(key);
+
+  if (timer) {
+    clearTimeout(timer);
+    playerDisconnectTimers.delete(key);
+  }
+}
+
+function clearRoomCleanupTimer(code) {
+  const timer = roomCleanupTimers.get(code);
+
+  if (timer) {
+    clearTimeout(timer);
+    roomCleanupTimers.delete(code);
+  }
+}
+
+function clearRoomTimers(code) {
+  clearRoomCleanupTimer(code);
+
+  for (const key of playerDisconnectTimers.keys()) {
+    if (key.startsWith(`${code}:`)) {
+      clearTimeout(playerDisconnectTimers.get(key));
+      playerDisconnectTimers.delete(key);
+    }
+  }
+}
+
+function deleteRoom(code) {
+  clearRoomTimers(code);
+  delete rooms[code];
+}
+
+function publicPlayers(room) {
+  return room.players.map(player => ({
+    id: player.id,
+    playerId: player.playerId,
+    name: player.name,
+    isHost: player.isHost,
+    score: player.score || 0,
+    offline: Boolean(player.offline)
+  }));
+}
+
+function emitRoomUpdated(code) {
+  const room = rooms[code];
+  if (!room) return;
+
+  io.to(code).emit('roomUpdated', {
+    roomCode: code,
+    players: publicPlayers(room)
+  });
+}
+
+function scheduleRoomCleanup(code) {
+  if (roomCleanupTimers.has(code)) return;
+
+  const timer = setTimeout(() => {
+    const room = rooms[code];
+    if (!room) return;
+
+    const everyoneOffline = room.players.every(player => player.offline);
+    if (everyoneOffline) {
+      deleteRoom(code);
+      return;
+    }
+
+    roomCleanupTimers.delete(code);
+  }, EMPTY_ROOM_TTL_MS);
+
+  roomCleanupTimers.set(code, timer);
+}
+
+function buildPlayerGameState(room, playerId) {
+  const isImposter = room.imposters.some(imposter => imposter.playerId === playerId);
+  const { category, mode, crewmateWord, hiddenImposterWord, imposterRevealed } = room.currentRound;
+
+  let roleToSend;
+  let wordToSend;
+
+  if (mode === 'hidden') {
+    roleToSend = 'Hidden';
+    wordToSend = isImposter ? hiddenImposterWord : crewmateWord;
+  } else {
+    roleToSend = isImposter ? 'Imposter' : 'Crewmate';
+    wordToSend = isImposter ? 'UNKNOWN' : crewmateWord;
+  }
+
+  return {
+    roomCode: room.code,
+    players: publicPlayers(room),
+    role: roleToSend,
+    word: wordToSend,
+    category: category.toUpperCase().replace('_', ' '),
+    mode,
+    selectedCategories: room.gameOptions.selectedCategories,
+    imposterRevealed,
+    imposterNames: imposterRevealed ? room.imposters.map(i => i.name).join(' & ') : null
+  };
+}
+
+function sendCurrentState(socket, code, playerId) {
+  const room = rooms[code];
+  if (!room) {
+    socket.emit('rejoinFailed');
+    return;
+  }
+
+  if (room.gameStarted && room.currentRound) {
+    socket.emit('rejoinGame', buildPlayerGameState(room, playerId));
+  } else {
+    socket.emit('roomCreated', {
+      roomCode: code,
+      players: publicPlayers(room)
+    });
+  }
+}
+
+function attachPlayerToSocket(socket, code, playerId, name) {
+  const room = rooms[code];
+  if (!room || !playerId) return false;
+
+  const player = room.players.find(p => p.playerId === playerId);
+  if (!player) return false;
+
+  clearPlayerDisconnectTimer(code, playerId);
+  clearRoomCleanupTimer(code);
+
+  player.id = socket.id;
+  player.offline = false;
+  player.disconnectedAt = null;
+  if (name) player.name = name;
+
+  socket.join(code);
+  emitRoomUpdated(code);
+  sendCurrentState(socket, code, playerId);
+
+  return true;
+}
+
+function pickRound(room, selectedCategories) {
+  const categoryToUse = selectedCategories[Math.floor(Math.random() * selectedCategories.length)];
+  const wordPool = [...categories[categoryToUse]].sort(() => 0.5 - Math.random());
+  const crewmateWord = wordPool[0];
+  const hiddenImposterWord = wordPool[1];
+  const requestedImposters = parseInt(room.gameOptions.imposterCount, 10);
+  const shuffledPlayers = [...room.players].sort(() => 0.5 - Math.random());
+  const imposterIds = shuffledPlayers.slice(0, requestedImposters).map(p => p.playerId);
+
+  room.imposters = room.players.filter(p => imposterIds.includes(p.playerId));
+  room.currentRound = {
+    category: categoryToUse,
+    mode: room.gameOptions.gameMode,
+    crewmateWord,
+    hiddenImposterWord,
+    imposterRevealed: false
+  };
+
+  return { categoryToUse, imposterIds };
+}
+
+function sendRoundAssignments(room, imposterIds) {
+  room.players.forEach(player => {
+    if (player.offline) return;
+    io.to(player.id).emit('gameStarted', buildPlayerGameState(room, player.playerId));
+  });
+}
+
+function validateCategories(selectedCategories) {
+  if (!Array.isArray(selectedCategories) || selectedCategories.length === 0) {
+    return 'Please select at least one category.';
+  }
+
+  for (const cat of selectedCategories) {
+    if (!categories[cat]) return 'Invalid category selected.';
+  }
+
+  return null;
 }
 
 io.on('connection', (socket) => {
+  socket.on('rejoinRoom', (payload = {}) => {
+    const code = normalizeRoomCode(payload.roomCode);
+    const success = attachPlayerToSocket(socket, code, payload.playerId);
 
-  // Handle Player Reconnections
-  socket.on('rejoinRoom', ({ roomCode, playerId }) => {
-    const code = roomCode.toUpperCase();
-    const room = rooms[code];
-    
-    if (!room) return socket.emit('rejoinFailed');
-
-    const player = room.players.find(p => p.playerId === playerId);
-    if (!player) return socket.emit('rejoinFailed');
-
-    // Re-bind the player to their fresh active socket connection
-    player.id = socket.id;
-    player.offline = false;
-    socket.join(code);
-
-    io.to(code).emit('roomUpdated', { players: room.players });
-
-    // Send the correct state based on whether they were mid-game or in the lobby
-    if (room.gameStarted && room.currentRound) {
-      const isImposter = room.imposters.some(i => i.playerId === playerId);
-      const { category, mode, crewmateWord, hiddenImposterWord, imposterRevealed } = room.currentRound;
-
-      let roleToSend = '';
-      let wordToSend = '';
-      if (mode === 'hidden') {
-        roleToSend = 'Hidden';
-        wordToSend = isImposter ? hiddenImposterWord : crewmateWord;
-      } else {
-        roleToSend = isImposter ? 'Imposter' : 'Crewmate';
-        wordToSend = isImposter ? 'UNKNOWN' : crewmateWord;
-      }
-
-      socket.emit('rejoinGame', {
-        players: room.players,
-        role: roleToSend,
-        word: wordToSend,
-        category: category.toUpperCase().replace('_', ' '),
-        mode,
-        selectedCategories: room.gameOptions.selectedCategories,
-        imposterRevealed,
-        imposterNames: imposterRevealed ? room.imposters.map(i => i.name).join(' & ') : null
-      });
-    } else {
-      socket.emit('roomCreated', { roomCode: code, players: room.players });
-    }
+    if (!success) socket.emit('rejoinFailed');
   });
 
-  socket.on('createRoom', ({ name, playerId }) => {
+  socket.on('syncState', (payload = {}) => {
+    const code = normalizeRoomCode(payload.roomCode);
+    const success = attachPlayerToSocket(socket, code, payload.playerId);
+
+    if (!success) socket.emit('rejoinFailed');
+  });
+
+  socket.on('createRoom', (payload = {}) => {
+    const name = typeof payload === 'string' ? payload.trim() : String(payload.name || '').trim();
+    const playerId = typeof payload === 'object' ? payload.playerId : socket.id;
+
+    if (!name) return socket.emit('errorMsg', 'Please enter a name first.');
+    if (!playerId) return socket.emit('errorMsg', 'Could not identify player. Please refresh and try again.');
+
     const roomCode = generateRoomCode();
     rooms[roomCode] = {
       code: roomCode,
-      players: [{ id: socket.id, playerId, name: name, isHost: true, score: 0, offline: false }],
+      players: [{ id: socket.id, playerId, name, isHost: true, score: 0, offline: false, disconnectedAt: null }],
       gameStarted: false,
       imposters: [],
       gameOptions: {},
       currentRound: null
     };
+
     socket.join(roomCode);
-    socket.emit('roomCreated', { roomCode, players: rooms[roomCode].players });
+    socket.emit('roomCreated', { roomCode, players: publicPlayers(rooms[roomCode]) });
   });
 
-  socket.on('joinRoom', ({ roomCode, playerName, playerId }) => {
-    const code = roomCode.toUpperCase();
+  socket.on('joinRoom', ({ roomCode, playerName, playerId } = {}) => {
+    const code = normalizeRoomCode(roomCode);
     const room = rooms[code];
+    const name = String(playerName || '').trim();
 
     if (!room) return socket.emit('errorMsg', 'Room not found.');
+    if (!name) return socket.emit('errorMsg', 'Please enter a name first.');
+    if (!playerId) return socket.emit('errorMsg', 'Could not identify player. Please refresh and try again.');
 
     const existingPlayer = room.players.find(p => p.playerId === playerId);
     if (existingPlayer) {
-      existingPlayer.id = socket.id;
-      existingPlayer.name = playerName; 
-      existingPlayer.offline = false;
-      socket.join(code);
-      return io.to(code).emit('roomUpdated', { players: room.players });
+      attachPlayerToSocket(socket, code, playerId, name);
+      return;
     }
 
     if (room.gameStarted) return socket.emit('errorMsg', 'Game has already started.');
 
-    room.players.push({ id: socket.id, playerId, name: playerName, isHost: false, score: 0, offline: false });
+    clearRoomCleanupTimer(code);
+    room.players.push({ id: socket.id, playerId, name, isHost: false, score: 0, offline: false, disconnectedAt: null });
     socket.join(code);
-    io.to(code).emit('roomUpdated', { players: room.players });
+
+    socket.emit('roomCreated', { roomCode: code, players: publicPlayers(room) });
+    emitRoomUpdated(code);
   });
 
-  socket.on('startGame', ({ roomCode, selectedCategories, imposterCount, gameMode }) => {
-    const room = rooms[roomCode.toUpperCase()];
+  socket.on('startGame', ({ roomCode, selectedCategories, imposterCount, gameMode } = {}) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = rooms[code];
     if (!room) return;
 
-    const numPlayers = room.players.length;
-    const requestedImposters = parseInt(imposterCount);
+    const requestingPlayer = room.players.find(p => p.id === socket.id);
+    if (!requestingPlayer?.isHost) return socket.emit('errorMsg', 'Only the host can start the game.');
 
+    const requestedImposters = parseInt(imposterCount, 10);
+    if (!Number.isInteger(requestedImposters) || requestedImposters < 1) {
+      return socket.emit('errorMsg', 'Please choose at least one imposter.');
+    }
+
+    const numPlayers = room.players.length;
     if (requestedImposters >= numPlayers) {
       return socket.emit('errorMsg', 'Imposters must be fewer than total players.');
     }
-    
-    if (!Array.isArray(selectedCategories) || selectedCategories.length === 0) {
-      return socket.emit('errorMsg', 'Please select at least one category.');
-    }
 
-    // Verify all selected categories are valid
-    for (let cat of selectedCategories) {
-      if (!categories[cat]) return socket.emit('errorMsg', 'Invalid category selected.');
-    }
-
-    // Randomly pick one of the allowed categories chosen by the host
-    const categoryToUse = selectedCategories[Math.floor(Math.random() * selectedCategories.length)];
+    const categoryError = validateCategories(selectedCategories);
+    if (categoryError) return socket.emit('errorMsg', categoryError);
 
     room.gameStarted = true;
-    room.gameOptions = { imposterCount, gameMode, selectedCategories };
-
-    const wordPool = [...categories[categoryToUse]].sort(() => 0.5 - Math.random());
-    const crewmateWord = wordPool[0];
-    const hiddenImposterWord = wordPool[1];
-
-    const shuffledPlayers = [...room.players].sort(() => 0.5 - Math.random());
-    const imposterIds = shuffledPlayers.slice(0, requestedImposters).map(p => p.playerId);
-    
-    room.imposters = room.players.filter(p => imposterIds.includes(p.playerId));
-
-    room.currentRound = {
-      category: categoryToUse,
-      mode: gameMode,
-      crewmateWord,
-      hiddenImposterWord,
-      imposterRevealed: false
+    room.gameOptions = {
+      imposterCount: requestedImposters,
+      gameMode: gameMode === 'hidden' ? 'hidden' : 'standard',
+      selectedCategories
     };
 
-    room.players.forEach((player) => {
-      const isImposter = imposterIds.includes(player.playerId);
-      let roleToSend = '';
-      let wordToSend = '';
-
-      if (gameMode === 'hidden') {
-        roleToSend = 'Hidden';
-        wordToSend = isImposter ? hiddenImposterWord : crewmateWord;
-      } else {
-        roleToSend = isImposter ? 'Imposter' : 'Crewmate';
-        wordToSend = isImposter ? 'UNKNOWN' : crewmateWord;
-      }
-
-      if (!player.offline) {
-        io.to(player.id).emit('gameStarted', {
-          role: roleToSend,
-          word: wordToSend,
-          category: categoryToUse.toUpperCase().replace('_', ' '),
-          mode: gameMode,
-          selectedCategories: room.gameOptions.selectedCategories,
-          players: room.players
-        });
-      }
-    });
+    const { imposterIds } = pickRound(room, selectedCategories);
+    sendRoundAssignments(room, imposterIds);
   });
 
-  socket.on('continueGame', ({ roomCode, pointsData, nextCategories }) => {
-    const room = rooms[roomCode.toUpperCase()];
+  socket.on('continueGame', ({ roomCode, pointsData = {}, nextCategories } = {}) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = rooms[code];
     if (!room) return;
 
-    // Apply points
-    room.players.forEach(p => {
-      if (pointsData[p.playerId]) p.score += parseInt(pointsData[p.playerId]) || 0;
+    const requestingPlayer = room.players.find(p => p.id === socket.id);
+    if (!requestingPlayer?.isHost) return socket.emit('errorMsg', 'Only the host can continue the game.');
+
+    const categoryError = validateCategories(nextCategories);
+    if (categoryError) return socket.emit('errorMsg', categoryError);
+
+    room.players.forEach(player => {
+      if (Object.prototype.hasOwnProperty.call(pointsData, player.playerId)) {
+        player.score += parseInt(pointsData[player.playerId], 10) || 0;
+      }
     });
 
-    if (!Array.isArray(nextCategories) || nextCategories.length === 0) {
-      return socket.emit('errorMsg', 'Please select at least one category.');
-    }
-
-    for (let cat of nextCategories) {
-      if (!categories[cat]) return socket.emit('errorMsg', 'Invalid category selected.');
-    }
-
-    // Update settings in case the host changed the checkboxes mid-game
     room.gameOptions.selectedCategories = nextCategories;
-    
-    const categoryToUse = nextCategories[Math.floor(Math.random() * nextCategories.length)];
-    const requestedImposters = parseInt(room.gameOptions.imposterCount);
-    const gameMode = room.gameOptions.gameMode;
+    const { imposterIds } = pickRound(room, nextCategories);
 
-    const wordPool = [...categories[categoryToUse]].sort(() => 0.5 - Math.random());
-    const crewmateWord = wordPool[0];
-    const hiddenImposterWord = wordPool[1];
-
-    const shuffledPlayers = [...room.players].sort(() => 0.5 - Math.random());
-    const imposterIds = shuffledPlayers.slice(0, requestedImposters).map(p => p.playerId);
-    
-    room.imposters = room.players.filter(p => imposterIds.includes(p.playerId));
-
-    room.currentRound = {
-      category: categoryToUse,
-      mode: gameMode,
-      crewmateWord,
-      hiddenImposterWord,
-      imposterRevealed: false
-    };
-
-    io.to(roomCode.toUpperCase()).emit('roomUpdated', { players: room.players });
-
-    room.players.forEach((player) => {
-      const isImposter = imposterIds.includes(player.playerId);
-      let roleToSend = '';
-      let wordToSend = '';
-
-      if (gameMode === 'hidden') {
-        roleToSend = 'Hidden';
-        wordToSend = isImposter ? hiddenImposterWord : crewmateWord;
-      } else {
-        roleToSend = isImposter ? 'Imposter' : 'Crewmate';
-        wordToSend = isImposter ? 'UNKNOWN' : crewmateWord;
-      }
-
-      if (!player.offline) {
-        io.to(player.id).emit('gameStarted', {
-          role: roleToSend,
-          word: wordToSend,
-          category: categoryToUse.toUpperCase().replace('_', ' '),
-          mode: gameMode,
-          selectedCategories: room.gameOptions.selectedCategories,
-          players: room.players
-        });
-      }
-    });
+    emitRoomUpdated(code);
+    sendRoundAssignments(room, imposterIds);
   });
 
   socket.on('revealImposter', (roomCode) => {
-    const room = rooms[roomCode.toUpperCase()];
-    if (!room) return;
+    const code = normalizeRoomCode(roomCode);
+    const room = rooms[code];
+    if (!room || !room.currentRound) return;
+
+    const requestingPlayer = room.players.find(p => p.id === socket.id);
+    if (!requestingPlayer?.isHost) return socket.emit('errorMsg', 'Only the host can end the round.');
+
     room.currentRound.imposterRevealed = true;
     const imposterNames = room.imposters.map(i => i.name).join(' & ');
-    io.to(roomCode.toUpperCase()).emit('imposterRevealed', imposterNames);
+    io.to(code).emit('imposterRevealed', imposterNames);
   });
 
   socket.on('resetScores', (roomCode) => {
-    const room = rooms[roomCode.toUpperCase()];
+    const code = normalizeRoomCode(roomCode);
+    const room = rooms[code];
     if (!room) return;
-    room.players.forEach(p => p.score = 0);
-    io.to(roomCode.toUpperCase()).emit('roomUpdated', { players: room.players });
+
+    const requestingPlayer = room.players.find(p => p.id === socket.id);
+    if (!requestingPlayer?.isHost) return socket.emit('errorMsg', 'Only the host can reset scores.');
+
+    room.players.forEach(p => { p.score = 0; });
+    emitRoomUpdated(code);
   });
 
   socket.on('resetGame', (roomCode) => {
-    const room = rooms[roomCode.toUpperCase()];
+    const code = normalizeRoomCode(roomCode);
+    const room = rooms[code];
     if (!room) return;
+
+    const requestingPlayer = room.players.find(p => p.id === socket.id);
+    if (!requestingPlayer?.isHost) return socket.emit('errorMsg', 'Only the host can reset the game.');
+
     room.gameStarted = false;
     room.imposters = [];
     room.currentRound = null;
-    io.to(roomCode.toUpperCase()).emit('gameReset', { players: room.players });
+    io.to(code).emit('gameReset', { roomCode: code, players: publicPlayers(room) });
   });
 
   socket.on('leaveRoom', (roomCode) => {
-    const code = roomCode.toUpperCase();
+    const code = normalizeRoomCode(roomCode);
     const room = rooms[code];
-    if (room) {
-      const index = room.players.findIndex(p => p.id === socket.id);
-      if (index !== -1) {
-        const removedPlayer = room.players.splice(index, 1)[0];
-        socket.leave(code);
-        
-        if (room.players.length === 0) {
-          delete rooms[code];
-        } else {
-          if (removedPlayer.isHost) room.players[0].isHost = true;
-          io.to(code).emit('roomUpdated', { players: room.players });
-        }
-      }
+    if (!room) return;
+
+    const index = room.players.findIndex(p => p.id === socket.id);
+    if (index === -1) return;
+
+    const removedPlayer = room.players.splice(index, 1)[0];
+    clearPlayerDisconnectTimer(code, removedPlayer.playerId);
+    socket.leave(code);
+
+    if (room.players.length === 0) {
+      deleteRoom(code);
+      return;
     }
+
+    if (removedPlayer.isHost && !room.players.some(p => p.isHost)) {
+      const nextHost = room.players.find(p => !p.offline) || room.players[0];
+      nextHost.isHost = true;
+    }
+
+    emitRoomUpdated(code);
   });
 
   socket.on('disconnect', () => {
     for (const code in rooms) {
       const room = rooms[code];
-      const playerIndex = room.players.findIndex(p => p.id === socket.id);
-      
-      if (playerIndex !== -1) {
-        const player = room.players[playerIndex];
-        player.offline = true; 
+      const player = room.players.find(p => p.id === socket.id);
 
-        const anyOnline = room.players.some(p => !p.offline);
-        
-        if (!anyOnline) {
-          delete rooms[code]; 
-        } else {
-          if (player.isHost) {
-            player.isHost = false;
-            const nextOnline = room.players.find(p => !p.offline);
-            if (nextOnline) nextOnline.isHost = true;
+      if (!player) continue;
+
+      player.offline = true;
+      player.disconnectedAt = Date.now();
+      emitRoomUpdated(code);
+
+      clearPlayerDisconnectTimer(code, player.playerId);
+      const key = playerTimerKey(code, player.playerId);
+
+      const timer = setTimeout(() => {
+        const currentRoom = rooms[code];
+        if (!currentRoom) return;
+
+        const currentPlayer = currentRoom.players.find(p => p.playerId === player.playerId);
+        if (!currentPlayer || !currentPlayer.offline) return;
+
+        if (currentPlayer.isHost) {
+          const nextOnlineHost = currentRoom.players.find(
+            p => !p.offline && p.playerId !== currentPlayer.playerId
+          );
+
+          if (nextOnlineHost) {
+            currentPlayer.isHost = false;
+            nextOnlineHost.isHost = true;
           }
-          io.to(code).emit('roomUpdated', { players: room.players });
         }
-        break;
+
+        emitRoomUpdated(code);
+
+        if (currentRoom.players.every(p => p.offline)) {
+          scheduleRoomCleanup(code);
+        }
+
+        playerDisconnectTimers.delete(key);
+      }, DISCONNECT_GRACE_MS);
+
+      playerDisconnectTimers.set(key, timer);
+
+      if (room.players.every(p => p.offline)) {
+        scheduleRoomCleanup(code);
       }
+
+      break;
     }
   });
 });
