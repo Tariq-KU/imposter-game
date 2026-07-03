@@ -20,7 +20,7 @@
     .reveal-btn { background-color: #8257e5; margin-top: 20px; }
     .reveal-btn:hover { background-color: #6a45bd; }
     ul { list-style: none; padding: 0; text-align: left; background: #121214; border-radius: 6px; padding: 10px; }
-    li { padding: 8px; border-bottom: 1px solid #29292e; display: flex; justify-content: space-between; }
+    li { padding: 8px; border-bottom: 1px solid #29292e; display: flex; justify-content: space-between; align-items: center; }
     li:last-child { border-bottom: none; }
     .role-box { padding: 20px; border-radius: 6px; margin: 20px 0; font-size: 24px; font-weight: bold; letter-spacing: 1px; }
     .role-imposter { background-color: #f75a68; color: #ffffff; }
@@ -28,6 +28,8 @@
     .role-hidden { background-color: #323238; color: #ffffff; border: 1px dashed #8d8d99; }
     .error { color: #f75a68; margin: 10px 0; font-size: 14px; }
     .host-tag { background: #8257e5; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+    .offline-tag { color: #f75a68; font-size: 12px; margin-left: 8px; font-style: italic; }
+    .offline-player { opacity: 0.5; }
     .reveal-banner { background-color: #f75a68; padding: 15px; border-radius: 6px; margin: 20px 0; animation: pop 0.4s ease-out; }
     @keyframes pop { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
   </style>
@@ -156,6 +158,15 @@
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
+    
+    // --- Persistence & Session Tracking ---
+    // Generate a unique ID for this browser if they don't have one
+    let myPlayerId = localStorage.getItem('imposter-playerId');
+    if (!myPlayerId) {
+      myPlayerId = 'p-' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('imposter-playerId', myPlayerId);
+    }
+    
     let currentRoomCode = '';
     let amIHost = false;
     let currentGameMode = 'standard';
@@ -197,6 +208,19 @@
     const leaveLobbyBtn = document.getElementById('leave-lobby-btn');
     const leaveGameBtn = document.getElementById('leave-game-btn');
 
+    // --- On Load Setup ---
+    const savedRoom = localStorage.getItem('imposter-roomCode');
+    const savedName = localStorage.getItem('imposter-playerName');
+    if (savedName) playerNameInput.value = savedName;
+
+    // Automatic Session Reconnection
+    socket.on('connect', () => {
+      if (savedRoom) {
+        // We have a saved room, tell the server we are back
+        socket.emit('rejoinRoom', { roomCode: savedRoom, playerId: myPlayerId });
+      }
+    });
+
     // --- Buttons ---
     createRoomBtn.addEventListener('click', () => {
       const name = playerNameInput.value.trim();
@@ -204,7 +228,9 @@
       setupError.innerText = '';
       createRoomBtn.disabled = true;
       createRoomBtn.innerText = 'Creating...';
-      socket.emit('createRoom', name);
+      
+      localStorage.setItem('imposter-playerName', name);
+      socket.emit('createRoom', { name, playerId: myPlayerId });
     });
 
     joinRoomBtn.addEventListener('click', () => {
@@ -215,8 +241,9 @@
       setupError.innerText = '';
       joinRoomBtn.disabled = true;
       joinRoomBtn.innerText = 'Joining...';
-      currentRoomCode = code; // Store room code locally right away
-      socket.emit('joinRoom', { roomCode: code, playerName: name });
+      
+      localStorage.setItem('imposter-playerName', name);
+      socket.emit('joinRoom', { roomCode: code, playerName: name, playerId: myPlayerId });
     });
 
     document.getElementById('start-game-btn').addEventListener('click', () => {
@@ -243,7 +270,7 @@
         const div = document.createElement('div');
         div.style = 'display: flex; justify-content: space-between; margin-bottom: 8px; align-items: center;';
         div.innerHTML = `<span style="font-size: 14px; color: #fff;">${p.name} <span style="color: #8d8d99; font-size: 12px;">(${p.score || 0} pts)</span></span>
-                         <input type="number" data-id="${p.id}" value="0" style="width: 70px; padding: 6px; margin: 0; background: #121214; border: 1px solid #323238; color: white; border-radius: 4px;">`;
+                         <input type="number" data-id="${p.playerId}" value="0" style="width: 70px; padding: 6px; margin: 0; background: #121214; border: 1px solid #323238; color: white; border-radius: 4px;">`;
         pointInputsContainer.appendChild(div);
       });
       
@@ -277,7 +304,10 @@
         socket.emit('leaveRoom', currentRoomCode);
       }
       
-      // Reset UI completely to the main menu setup screen
+      // Wipe their storage so they don't auto-connect
+      localStorage.removeItem('imposter-roomCode');
+      
+      // Reset UI completely
       lobbyScreen.classList.add('hidden');
       gameScreen.classList.add('hidden');
       setupScreen.classList.remove('hidden');
@@ -285,7 +315,6 @@
       currentRoomCode = '';
       amIHost = false;
       
-      // Re-enable join/create buttons 
       createRoomBtn.disabled = false;
       createRoomBtn.innerText = 'Create New Game';
       joinRoomBtn.disabled = false;
@@ -298,9 +327,9 @@
     // --- Socket Listeners ---
     function handleLobbyEntry(code, players) {
       currentRoomCode = code;
+      localStorage.setItem('imposter-roomCode', code);
       displayRoomCode.innerText = code;
       
-      // Reset Join/Create Buttons
       createRoomBtn.disabled = false;
       createRoomBtn.innerText = 'Create New Game';
       joinRoomBtn.disabled = false;
@@ -310,14 +339,14 @@
       gameScreen.classList.add('hidden');
       lobbyScreen.classList.remove('hidden');
       revealBanner.classList.add('hidden'); 
-      revealBanner.style.display = 'none'; // Force hide
+      revealBanner.style.display = 'none';
       
       updatePlayerList(players);
     }
 
     function updatePlayerList(players) {
       currentPlayers = players; 
-      const me = players.find(p => p.id === socket.id);
+      const me = players.find(p => p.playerId === myPlayerId);
       
       if (me) {
         amIHost = me.isHost;
@@ -330,14 +359,18 @@
         }
       }
 
-      // Update Lobby List
       playerList.innerHTML = '';
       gamePlayerList.innerHTML = '';
       
       players.forEach((player) => {
+        // Offline tag logic
+        const offlineTag = player.offline ? '<span class="offline-tag">(Offline)</span>' : '';
+        const rowClass = player.offline ? 'offline-player' : '';
+
         // Lobby List Element
         const li1 = document.createElement('li');
-        li1.innerHTML = `<span>${player.name} <span style="color: #00b37e; font-size: 13px; margin-left: 5px;">(${player.score || 0} pts)</span></span>`;
+        li1.className = rowClass;
+        li1.innerHTML = `<span>${player.name} <span style="color: #00b37e; font-size: 13px; margin-left: 5px;">(${player.score || 0} pts)</span>${offlineTag}</span>`;
         if (player.isHost) {
           const span = document.createElement('span');
           span.innerText = 'HOST';
@@ -348,15 +381,100 @@
         
         // Game Leaderboard Element
         const li2 = document.createElement('li');
-        li2.innerHTML = `<span style="color: #fff;">${player.name}</span> <span style="color: #00b37e; font-weight: bold;">${player.score || 0} pts</span>`;
+        li2.className = rowClass;
+        li2.innerHTML = `<span style="color: #fff;">${player.name}${offlineTag}</span> <span style="color: #00b37e; font-weight: bold;">${player.score || 0} pts</span>`;
         gamePlayerList.appendChild(li2);
       });
     }
 
+    // Handles initializing the view for a game that just started or was restored
+    function displayActiveGameData(data) {
+      if (data.players) updatePlayerList(data.players); 
+
+      lobbyScreen.classList.add('hidden');
+      setupScreen.classList.add('hidden');
+      gameScreen.classList.remove('hidden');
+      continuePanel.classList.add('hidden');
+      
+      gameCategoryReveal.innerText = data.category;
+      currentGameMode = data.mode;
+      
+      gameHostControls.classList.add('hidden');
+      revealImposterBtn.classList.add('hidden');
+
+      if (data.mode === 'hidden') {
+        document.getElementById('role-title').innerText = "Your Secret Word";
+        roleDisplayCard.style.display = 'none'; 
+        roleDisplayCard.innerText = ''; 
+        roleDisplayCard.className = 'hidden'; 
+        
+        wordDisplayArea.classList.remove('hidden');
+        gameWordReveal.innerText = data.word;
+        gameInstructions.innerText = "Everyone has a word! One person has a DIFFERENT word. Describe yours carefully!";
+      } else {
+        document.getElementById('role-title').innerText = "Your Role Assignment";
+        roleDisplayCard.style.display = 'block'; 
+        roleDisplayCard.classList.remove('hidden');
+        
+        if (data.role === 'Imposter') {
+          roleDisplayCard.innerText = 'YOU ARE THE IMPOSTER!';
+          roleDisplayCard.className = 'role-box role-imposter';
+          wordDisplayArea.classList.add('hidden');
+        } else {
+          roleDisplayCard.innerText = 'YOU ARE CREWMATE';
+          roleDisplayCard.className = 'role-box role-crewmate';
+          wordDisplayArea.classList.remove('hidden');
+          gameWordReveal.innerText = data.word;
+        }
+        gameInstructions.innerText = "Discuss and find the Imposter!";
+      }
+
+      // If rejoining a round that was already revealed, pop the banner open immediately
+      if (data.imposterRevealed) {
+         showImposterReveal(data.imposterNames);
+      } else {
+         revealBanner.classList.add('hidden');
+         revealBanner.style.display = 'none';
+         if (amIHost) {
+           revealImposterBtn.innerText = data.mode === 'hidden' ? 'End Round & Reveal (Host Only)' : 'End Round (Host Only)';
+           revealImposterBtn.classList.remove('hidden');
+         }
+      }
+    }
+
+    function showImposterReveal(imposterNames) {
+      revealBanner.classList.remove('hidden');
+      revealBanner.style.display = 'block'; 
+      
+      const myName = playerNameInput.value.trim() || localStorage.getItem('imposter-playerName');
+      if (imposterNames.includes(myName)) {
+        revealedImposterName.innerText = imposterNames + " (That's YOU!)";
+      } else {
+        revealedImposterName.innerText = imposterNames;
+      }
+      
+      revealImposterBtn.classList.add('hidden'); 
+      if (amIHost) {
+        gameHostControls.classList.remove('hidden'); 
+      }
+    }
+
+    // Server Callbacks
+    socket.on('rejoinFailed', () => {
+      localStorage.removeItem('imposter-roomCode');
+      setupScreen.classList.remove('hidden');
+      lobbyScreen.classList.add('hidden');
+      gameScreen.classList.add('hidden');
+    });
+
+    socket.on('rejoinGame', (data) => {
+      currentRoomCode = savedRoom; // Grab from storage
+      displayActiveGameData(data);
+    });
+
     socket.on('roomCreated', (data) => { handleLobbyEntry(data.roomCode, data.players); });
     
     socket.on('roomUpdated', (data) => { 
-      // If the setup screen is still showing, the user just joined and needs to be transitioned
       if (!setupScreen.classList.contains('hidden')) {
         handleLobbyEntry(currentRoomCode, data.players);
       } else {
@@ -367,86 +485,15 @@
     socket.on('errorMsg', (msg) => { 
       setupError.innerText = msg; 
       lobbyError.innerText = msg; 
-      
-      // Re-enable buttons if there was an error
       createRoomBtn.disabled = false;
       createRoomBtn.innerText = 'Create New Game';
       joinRoomBtn.disabled = false;
       joinRoomBtn.innerText = 'Join Game';
     });
 
-    socket.on('gameStarted', ({ role, word, category, mode, players }) => {
-      if (players) updatePlayerList(players); // Ensure points update on start
+    socket.on('gameStarted', displayActiveGameData);
 
-      lobbyScreen.classList.add('hidden');
-      gameScreen.classList.remove('hidden');
-      revealBanner.classList.add('hidden');
-      revealBanner.style.display = 'none';
-      continuePanel.classList.add('hidden');
-      
-      gameCategoryReveal.innerText = category;
-      currentGameMode = mode;
-      
-      // Reset host buttons entirely to prevent early endings
-      gameHostControls.classList.add('hidden');
-      revealImposterBtn.classList.add('hidden');
-
-      if (mode === 'hidden') {
-        // HIDDEN MODE LOGIC
-        document.getElementById('role-title').innerText = "Your Secret Word";
-        roleDisplayCard.style.display = 'none'; 
-        roleDisplayCard.innerText = ''; 
-        roleDisplayCard.className = 'hidden'; 
-        
-        wordDisplayArea.classList.remove('hidden');
-        gameWordReveal.innerText = word;
-        gameInstructions.innerText = "Everyone has a word! One person has a DIFFERENT word. Describe yours carefully!";
-        
-        if (amIHost) {
-          revealImposterBtn.innerText = 'End Round & Reveal (Host Only)';
-          revealImposterBtn.classList.remove('hidden');
-        }
-      } else {
-        // STANDARD MODE LOGIC
-        document.getElementById('role-title').innerText = "Your Role Assignment";
-        roleDisplayCard.style.display = 'block'; 
-        roleDisplayCard.classList.remove('hidden');
-        
-        if (role === 'Imposter') {
-          roleDisplayCard.innerText = 'YOU ARE THE IMPOSTER!';
-          roleDisplayCard.className = 'role-box role-imposter';
-          wordDisplayArea.classList.add('hidden');
-        } else {
-          roleDisplayCard.innerText = 'YOU ARE CREWMATE';
-          roleDisplayCard.className = 'role-box role-crewmate';
-          wordDisplayArea.classList.remove('hidden');
-          gameWordReveal.innerText = word;
-        }
-        gameInstructions.innerText = "Discuss and find the Imposter!";
-        
-        if (amIHost) {
-          revealImposterBtn.innerText = 'End Round (Host Only)';
-          revealImposterBtn.classList.remove('hidden');
-        }
-      }
-    });
-
-    socket.on('imposterRevealed', (imposterNames) => {
-      revealBanner.classList.remove('hidden');
-      revealBanner.style.display = 'block'; // Force display it for everyone
-      
-      const myName = playerNameInput.value.trim();
-      if (imposterNames.includes(myName)) {
-        revealedImposterName.innerText = imposterNames + " (That's YOU!)";
-      } else {
-        revealedImposterName.innerText = imposterNames;
-      }
-      
-      revealImposterBtn.classList.add('hidden'); // Hide the end round button
-      if (amIHost) {
-        gameHostControls.classList.remove('hidden'); // Show the Continue/Return buttons
-      }
-    });
+    socket.on('imposterRevealed', showImposterReveal);
 
     socket.on('gameReset', ({ players }) => {
       handleLobbyEntry(currentRoomCode, players);
