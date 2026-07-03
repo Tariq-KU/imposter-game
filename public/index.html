@@ -212,13 +212,14 @@
     const leaveGameBtn = document.getElementById('leave-game-btn');
 
     // --- On Load Setup ---
-    const savedRoom = localStorage.getItem('imposter-roomCode');
     const savedName = localStorage.getItem('imposter-playerName');
     if (savedName) playerNameInput.value = savedName;
 
     socket.on('connect', () => {
-      if (savedRoom) {
-        socket.emit('rejoinRoom', { roomCode: savedRoom, playerId: myPlayerId });
+      // DYNAMIC FETCH: Get the room right now, not just when the page loaded
+      const activeRoom = currentRoomCode || localStorage.getItem('imposter-roomCode');
+      if (activeRoom) {
+        socket.emit('rejoinRoom', { roomCode: activeRoom, playerId: myPlayerId });
       }
     });
 
@@ -478,7 +479,8 @@
     });
 
     socket.on('rejoinGame', (data) => {
-      currentRoomCode = savedRoom; 
+      // DYNAMIC FETCH: Update the local variable properly
+      currentRoomCode = localStorage.getItem('imposter-roomCode'); 
       displayActiveGameData(data);
     });
 
@@ -515,13 +517,12 @@
         const activeRoom = currentRoomCode || localStorage.getItem('imposter-roomCode');
         
         if (activeRoom) {
-          if (timeAsleep > 2000) {
-            // If phone was asleep for > 2 seconds, the connection is a dead zombie.
-            // Force a hard disconnect and reconnect to instantly fetch the new round data.
+          if (timeAsleep > 1000) {
+            // Kill the zombie socket and wait a split second for the transport layer to clear
             socket.disconnect();
-            socket.connect(); 
+            setTimeout(() => { socket.connect(); }, 150); 
           } else {
-            // It was just a quick flicker, try sending rejoin directly
+            // It was just a quick flicker, ask server for the latest state to be safe
             socket.emit('rejoinRoom', { roomCode: activeRoom, playerId: myPlayerId });
           }
         }
