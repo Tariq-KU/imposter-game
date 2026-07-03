@@ -85,7 +85,7 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.playerId === playerId);
     if (!player) return socket.emit('rejoinFailed');
 
-    // Re-bind the player to their new socket
+    // Re-bind the player to their fresh active socket connection
     player.id = socket.id;
     player.offline = false;
     socket.join(code);
@@ -113,6 +113,7 @@ io.on('connection', (socket) => {
         word: wordToSend,
         category: category.toUpperCase().replace('_', ' '),
         mode,
+        selectedCategories: room.gameOptions.selectedCategories,
         imposterRevealed,
         imposterNames: imposterRevealed ? room.imposters.map(i => i.name).join(' & ') : null
       });
@@ -141,11 +142,10 @@ io.on('connection', (socket) => {
 
     if (!room) return socket.emit('errorMsg', 'Room not found.');
 
-    // If they already exist but just clicked Join manually, handle as a rejoin
     const existingPlayer = room.players.find(p => p.playerId === playerId);
     if (existingPlayer) {
       existingPlayer.id = socket.id;
-      existingPlayer.name = playerName; // Update name in case they changed it
+      existingPlayer.name = playerName; 
       existingPlayer.offline = false;
       socket.join(code);
       return io.to(code).emit('roomUpdated', { players: room.players });
@@ -158,7 +158,7 @@ io.on('connection', (socket) => {
     io.to(code).emit('roomUpdated', { players: room.players });
   });
 
-  socket.on('startGame', ({ roomCode, category, imposterCount, gameMode }) => {
+  socket.on('startGame', ({ roomCode, selectedCategories, imposterCount, gameMode }) => {
     const room = rooms[roomCode.toUpperCase()];
     if (!room) return;
 
@@ -169,16 +169,20 @@ io.on('connection', (socket) => {
       return socket.emit('errorMsg', 'Imposters must be fewer than total players.');
     }
     
-    let categoryToUse = category;
-    if (categoryToUse === 'random') {
-      const catKeys = Object.keys(categories);
-      categoryToUse = catKeys[Math.floor(Math.random() * catKeys.length)];
-    } else if (!categories[categoryToUse]) {
-      return socket.emit('errorMsg', 'Invalid category selected.');
+    if (!Array.isArray(selectedCategories) || selectedCategories.length === 0) {
+      return socket.emit('errorMsg', 'Please select at least one category.');
     }
 
+    // Verify all selected categories are valid
+    for (let cat of selectedCategories) {
+      if (!categories[cat]) return socket.emit('errorMsg', 'Invalid category selected.');
+    }
+
+    // Randomly pick one of the allowed categories chosen by the host
+    const categoryToUse = selectedCategories[Math.floor(Math.random() * selectedCategories.length)];
+
     room.gameStarted = true;
-    room.gameOptions = { imposterCount, gameMode };
+    room.gameOptions = { imposterCount, gameMode, selectedCategories };
 
     const wordPool = [...categories[categoryToUse]].sort(() => 0.5 - Math.random());
     const crewmateWord = wordPool[0];
@@ -189,7 +193,6 @@ io.on('connection', (socket) => {
     
     room.imposters = room.players.filter(p => imposterIds.includes(p.playerId));
 
-    // Save round data to successfully restore reconnecting players
     room.currentRound = {
       category: categoryToUse,
       mode: gameMode,
@@ -217,28 +220,34 @@ io.on('connection', (socket) => {
           word: wordToSend,
           category: categoryToUse.toUpperCase().replace('_', ' '),
           mode: gameMode,
+          selectedCategories: room.gameOptions.selectedCategories,
           players: room.players
         });
       }
     });
   });
 
-  socket.on('continueGame', ({ roomCode, pointsData, nextCategory }) => {
+  socket.on('continueGame', ({ roomCode, pointsData, nextCategories }) => {
     const room = rooms[roomCode.toUpperCase()];
     if (!room) return;
 
+    // Apply points
     room.players.forEach(p => {
       if (pointsData[p.playerId]) p.score += parseInt(pointsData[p.playerId]) || 0;
     });
 
-    let categoryToUse = nextCategory;
-    if (categoryToUse === 'random') {
-      const catKeys = Object.keys(categories);
-      categoryToUse = catKeys[Math.floor(Math.random() * catKeys.length)];
-    } else if (!categories[categoryToUse]) {
-      return socket.emit('errorMsg', 'Invalid category selected.');
+    if (!Array.isArray(nextCategories) || nextCategories.length === 0) {
+      return socket.emit('errorMsg', 'Please select at least one category.');
     }
 
+    for (let cat of nextCategories) {
+      if (!categories[cat]) return socket.emit('errorMsg', 'Invalid category selected.');
+    }
+
+    // Update settings in case the host changed the checkboxes mid-game
+    room.gameOptions.selectedCategories = nextCategories;
+    
+    const categoryToUse = nextCategories[Math.floor(Math.random() * nextCategories.length)];
     const requestedImposters = parseInt(room.gameOptions.imposterCount);
     const gameMode = room.gameOptions.gameMode;
 
@@ -280,6 +289,7 @@ io.on('connection', (socket) => {
           word: wordToSend,
           category: categoryToUse.toUpperCase().replace('_', ' '),
           mode: gameMode,
+          selectedCategories: room.gameOptions.selectedCategories,
           players: room.players
         });
       }
@@ -310,7 +320,6 @@ io.on('connection', (socket) => {
     io.to(roomCode.toUpperCase()).emit('gameReset', { players: room.players });
   });
 
-  // Explicitly leaving the room permanently
   socket.on('leaveRoom', (roomCode) => {
     const code = roomCode.toUpperCase();
     const room = rooms[code];
@@ -330,7 +339,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Accidental disconnects (closes tab, phone screen turns off)
   socket.on('disconnect', () => {
     for (const code in rooms) {
       const room = rooms[code];
@@ -338,22 +346,18 @@ io.on('connection', (socket) => {
       
       if (playerIndex !== -1) {
         const player = room.players[playerIndex];
-        player.offline = true; // Mark as offline but don't delete them!
+        player.offline = true; 
 
-        // Are there any players still connected?
         const anyOnline = room.players.some(p => !p.offline);
         
         if (!anyOnline) {
-          // If everyone has closed the tab, delete the room to free up server memory
           delete rooms[code]; 
         } else {
-          // If host disconnects, give host powers to an active player temporarily
           if (player.isHost) {
             player.isHost = false;
             const nextOnline = room.players.find(p => !p.offline);
             if (nextOnline) nextOnline.isHost = true;
           }
-          // Notify the room that they went offline
           io.to(code).emit('roomUpdated', { players: room.players });
         }
         break;
