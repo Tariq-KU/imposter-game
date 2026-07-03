@@ -31,6 +31,12 @@
     .offline-tag { color: #f75a68; font-size: 12px; margin-left: 8px; font-style: italic; }
     .offline-player { opacity: 0.5; }
     .reveal-banner { background-color: #f75a68; padding: 15px; border-radius: 6px; margin: 20px 0; animation: pop 0.4s ease-out; }
+    
+    /* Multi-select category checkboxes styling */
+    .checkbox-group { text-align: left; background: #121214; padding: 10px; border-radius: 6px; border: 1px solid #29292e; max-height: 150px; overflow-y: auto; margin-top: 5px; display: flex; flex-direction: column; gap: 8px; }
+    .checkbox-group label { display: flex; align-items: center; cursor: pointer; font-size: 14px; margin: 0; color: #e1e1e6; }
+    .checkbox-group input[type="checkbox"] { width: 18px; height: 18px; margin: 0 10px 0 0; cursor: pointer; flex-shrink: 0; }
+    
     @keyframes pop { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
   </style>
 </head>
@@ -62,16 +68,15 @@
           <option value="hidden">Hidden Imposter (No one knows if they are safe!)</option>
         </select>
 
-        <label for="category-select" style="display:block; text-align:left; margin-top:10px; font-size:14px;">Select Category:</label>
-        <select id="category-select">
-          <option value="random">🎲 Random Category</option>
-          <option value="anime">Anime Characters (Demon Slayer / AOT)</option>
-          <option value="marvel_dc">Marvel / DC Characters</option>
-          <option value="food">Food & Cuisine</option>
-          <option value="animals">Animals</option>
-          <option value="professions">Professions</option>
-          <option value="irl_people">Famous IRL People / Athletes</option>
-        </select>
+        <label style="display:block; text-align:left; margin-top:10px; font-size:14px;">Select Categories (Randomly picks from chosen):</label>
+        <div id="lobby-categories" class="checkbox-group">
+          <label><input type="checkbox" value="anime" checked> Anime Characters (Demon Slayer / AOT)</label>
+          <label><input type="checkbox" value="marvel_dc" checked> Marvel / DC Characters</label>
+          <label><input type="checkbox" value="food" checked> Food & Cuisine</label>
+          <label><input type="checkbox" value="animals" checked> Animals</label>
+          <label><input type="checkbox" value="professions" checked> Professions</label>
+          <label><input type="checkbox" value="irl_people" checked> Famous IRL People / Athletes</label>
+        </div>
 
         <label for="imposter-count" style="display:block; text-align:left; margin-top:10px; font-size:14px;">Number of Imposters:</label>
         <input type="number" id="imposter-count" value="1" min="1" max="5">
@@ -102,7 +107,7 @@
         <h3 id="game-word-reveal" style="font-size: 28px; margin: 10px 0; color: #ffffff;">-</h3>
       </div>
 
-      <!-- Result Banner (Hidden until reveal) -->
+      <!-- Result Banner -->
       <div id="reveal-banner" class="hidden reveal-banner">
         <h3 style="margin: 0;">The Imposter Was:</h3>
         <h2 id="revealed-imposter-name" style="margin: 5px 0 0 0; color: #fff;">-</h2>
@@ -127,16 +132,15 @@
         <p style="font-size: 13px; color: #8d8d99; margin-bottom: 10px;">Give points based on performance.</p>
         <div id="point-inputs-container" style="text-align: left; margin-bottom: 15px; max-height: 150px; overflow-y: auto;"></div>
         
-        <label for="next-category-select" style="display:block; text-align:left; font-size:14px;">Next Category:</label>
-        <select id="next-category-select">
-          <option value="random">🎲 Random Category</option>
-          <option value="anime">Anime Characters (Demon Slayer / AOT)</option>
-          <option value="marvel_dc">Marvel / DC Characters</option>
-          <option value="food">Food & Cuisine</option>
-          <option value="animals">Animals</option>
-          <option value="professions">Professions</option>
-          <option value="irl_people">Famous IRL People / Athletes</option>
-        </select>
+        <label style="display:block; text-align:left; margin-top:10px; font-size:14px;">Next Categories:</label>
+        <div id="continue-categories" class="checkbox-group">
+          <label><input type="checkbox" value="anime"> Anime Characters (Demon Slayer / AOT)</label>
+          <label><input type="checkbox" value="marvel_dc"> Marvel / DC Characters</label>
+          <label><input type="checkbox" value="food"> Food & Cuisine</label>
+          <label><input type="checkbox" value="animals"> Animals</label>
+          <label><input type="checkbox" value="professions"> Professions</label>
+          <label><input type="checkbox" value="irl_people"> Famous IRL People / Athletes</label>
+        </div>
         
         <div style="display: flex; gap: 10px; margin-top: 15px;">
           <button id="confirm-continue-btn" style="margin: 0;">Start Next Round</button>
@@ -160,7 +164,6 @@
     const socket = io();
     
     // --- Persistence & Session Tracking ---
-    // Generate a unique ID for this browser if they don't have one
     let myPlayerId = localStorage.getItem('imposter-playerId');
     if (!myPlayerId) {
       myPlayerId = 'p-' + Math.random().toString(36).substr(2, 9);
@@ -213,10 +216,8 @@
     const savedName = localStorage.getItem('imposter-playerName');
     if (savedName) playerNameInput.value = savedName;
 
-    // Automatic Session Reconnection
     socket.on('connect', () => {
       if (savedRoom) {
-        // We have a saved room, tell the server we are back
         socket.emit('rejoinRoom', { roomCode: savedRoom, playerId: myPlayerId });
       }
     });
@@ -247,11 +248,17 @@
     });
 
     document.getElementById('start-game-btn').addEventListener('click', () => {
-      const category = document.getElementById('category-select').value;
+      const selectedCategories = Array.from(document.querySelectorAll('#lobby-categories input:checked')).map(cb => cb.value);
       const imposterCount = document.getElementById('imposter-count').value;
       const gameMode = document.getElementById('mode-select').value;
+      
+      if (selectedCategories.length === 0) {
+        lobbyError.innerText = 'Please select at least one category.';
+        return;
+      }
+      
       lobbyError.innerText = '';
-      socket.emit('startGame', { roomCode: currentRoomCode, category, imposterCount, gameMode });
+      socket.emit('startGame', { roomCode: currentRoomCode, selectedCategories, imposterCount, gameMode });
     });
 
     resetScoresBtn.addEventListener('click', () => {
@@ -285,14 +292,19 @@
     });
 
     confirmContinueBtn.addEventListener('click', () => {
-      const inputs = pointInputsContainer.querySelectorAll('input');
+      const inputs = pointInputsContainer.querySelectorAll('input[type="number"]');
       const pointsData = {};
       inputs.forEach(input => {
         pointsData[input.getAttribute('data-id')] = parseInt(input.value) || 0;
       });
-      const nextCategory = document.getElementById('next-category-select').value;
       
-      socket.emit('continueGame', { roomCode: currentRoomCode, pointsData, nextCategory });
+      const nextCategories = Array.from(document.querySelectorAll('#continue-categories input:checked')).map(cb => cb.value);
+      if (nextCategories.length === 0) {
+        alert('Please select at least one category.');
+        return;
+      }
+      
+      socket.emit('continueGame', { roomCode: currentRoomCode, pointsData, nextCategories });
     });
 
     playAgainBtn.addEventListener('click', () => {
@@ -303,11 +315,8 @@
       if (currentRoomCode) {
         socket.emit('leaveRoom', currentRoomCode);
       }
-      
-      // Wipe their storage so they don't auto-connect
       localStorage.removeItem('imposter-roomCode');
       
-      // Reset UI completely
       lobbyScreen.classList.add('hidden');
       gameScreen.classList.add('hidden');
       setupScreen.classList.remove('hidden');
@@ -363,11 +372,9 @@
       gamePlayerList.innerHTML = '';
       
       players.forEach((player) => {
-        // Offline tag logic
         const offlineTag = player.offline ? '<span class="offline-tag">(Offline)</span>' : '';
         const rowClass = player.offline ? 'offline-player' : '';
 
-        // Lobby List Element
         const li1 = document.createElement('li');
         li1.className = rowClass;
         li1.innerHTML = `<span>${player.name} <span style="color: #00b37e; font-size: 13px; margin-left: 5px;">(${player.score || 0} pts)</span>${offlineTag}</span>`;
@@ -379,7 +386,6 @@
         }
         playerList.appendChild(li1);
         
-        // Game Leaderboard Element
         const li2 = document.createElement('li');
         li2.className = rowClass;
         li2.innerHTML = `<span style="color: #fff;">${player.name}${offlineTag}</span> <span style="color: #00b37e; font-weight: bold;">${player.score || 0} pts</span>`;
@@ -387,9 +393,15 @@
       });
     }
 
-    // Handles initializing the view for a game that just started or was restored
     function displayActiveGameData(data) {
       if (data.players) updatePlayerList(data.players); 
+
+      // Sync the host's "Continue Game" checkboxes with the current server options
+      if (data.selectedCategories && amIHost) {
+        document.querySelectorAll('#continue-categories input[type="checkbox"]').forEach(cb => {
+          cb.checked = data.selectedCategories.includes(cb.value);
+        });
+      }
 
       lobbyScreen.classList.add('hidden');
       setupScreen.classList.add('hidden');
@@ -429,7 +441,6 @@
         gameInstructions.innerText = "Discuss and find the Imposter!";
       }
 
-      // If rejoining a round that was already revealed, pop the banner open immediately
       if (data.imposterRevealed) {
          showImposterReveal(data.imposterNames);
       } else {
@@ -459,7 +470,6 @@
       }
     }
 
-    // Server Callbacks
     socket.on('rejoinFailed', () => {
       localStorage.removeItem('imposter-roomCode');
       setupScreen.classList.remove('hidden');
@@ -468,7 +478,7 @@
     });
 
     socket.on('rejoinGame', (data) => {
-      currentRoomCode = savedRoom; // Grab from storage
+      currentRoomCode = savedRoom; 
       displayActiveGameData(data);
     });
 
@@ -492,11 +502,16 @@
     });
 
     socket.on('gameStarted', displayActiveGameData);
-
     socket.on('imposterRevealed', showImposterReveal);
+    socket.on('gameReset', ({ players }) => { handleLobbyEntry(currentRoomCode, players); });
 
-    socket.on('gameReset', ({ players }) => {
-      handleLobbyEntry(currentRoomCode, players);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        const activeRoom = currentRoomCode || localStorage.getItem('imposter-roomCode');
+        if (activeRoom) {
+          socket.emit('rejoinRoom', { roomCode: activeRoom, playerId: myPlayerId });
+        }
+      }
     });
   </script>
 </body>
