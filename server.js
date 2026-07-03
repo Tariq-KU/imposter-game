@@ -28,59 +28,123 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Expanded Game Categories Data
 const categories = {
   anime: [
-    "Tanjiro Kamado", "Nezuko Kamado", "Zenitsu Agatsuma", "Inosuke Hashibira", 
-    "Giyu Tomioka", "Kyojuro Rengoku", "Tengen Uzui", "Muichiro Tokito",
-    "Mitsuri Kanroji", "Obanai Iguro", "Sanemi Shinazugawa", "Gyomei Himejima",
-    "Shinobu Kocho", "Muzan Kibutsuji", "Akaza", "Doma", "Kokushibo",
-    "Eren Yeager", "Mikasa Ackerman", "Armin Arlert", "Levi Ackerman", 
-    "Erwin Smith", "Reiner Braun", "Annie Leonhart", "Bertholdt Hoover", 
-    "Hange Zoe", "Zeke Yeager", "Historia Reiss", "Jean Kirstein", 
-    "Sasha Blouse", "Connie Springer", "Pieck Finger", "Porco Galliard"
+    // Demon Slayer
+    "Tanjiro Kamado", "Nezuko Kamado", "Zenitsu Agatsuma", "Inosuke Hashibira",
+    "Kanao Tsuyuri", "Genya Shinazugawa", "Giyu Tomioka", "Kyojuro Rengoku",
+    "Tengen Uzui", "Muichiro Tokito", "Mitsuri Kanroji", "Obanai Iguro",
+    "Sanemi Shinazugawa", "Gyomei Himejima", "Shinobu Kocho", "Kanae Kocho",
+    "Kagaya Ubuyashiki", "Amane Ubuyashiki",
+    "Hotaru Haganezuka",
+    "Tamayo", "Muzan Kibutsuji", "Kokushibo",
+    "Doma", "Akaza", "Hantengu", "Gyokko",
+    "Daki", "Gyutaro", "Kaigaku",
+    "Rui", "Kyogai", "Susamaru", "Yahaba",
+    "Tanjuro Kamado", "Makio", "Nakime",
+
+    // Attack on Titan
+    "Eren Yeager", "Mikasa Ackerman", "Armin Arlert", "Levi Ackerman",
+    "Erwin Smith", "Reiner Braun", "Annie Leonhart", "Bertholdt Hoover",
+    "Hange Zoe", "Zeke Yeager", "Historia Reiss", "Jean Kirstein",
+    "Sasha Blouse", "Connie Springer", "Pieck Finger", "Porco Galliard",
+    "Falco Grice", "Gabi Braun", "Ymir (jaw titan)", "Ymir Fritz",
+    "Kenny Ackerman", "Rod Reiss", "Grisha Yeager", "Carla Yeager",
+    "Faye Yeager", "Dina Fritz", "Eren Kruger", "Keith Shadis",
+    "Floch Forster", "Hannes", "Marco Bodt", "Dot Pixis",
+    "Nile Dok", "Hitch Dreyse", "Marlo Freudenberg", "Moblit Berner",
+    "Onyankopon", "Yelena", "Niccolo", "Willy Tybur",
+    "Lara Tybur", "Theo Magath", "Colt Grice", "Marcel Galliard"
   ],
   marvel_dc: [
-    "Batman", "Superman", "Spider-Man", "Iron Man", "Wonder Woman", 
-    "Captain America", "Thor", "Hulk", "Black Widow", "The Flash", 
-    "Aquaman", "Green Lantern", "Wolverine", "Deadpool", "Doctor Strange", 
-    "Black Panther", "Ant-Man", "Scarlet Witch", "Vision", "Loki", 
-    "Thanos", "Joker", "Harley Quinn", "Lex Luthor", "Darkseid", 
-    "Magneto", "Professor X", "Daredevil", "The Punisher", "Venom"
+    "Batman", "Superman", "Spider-Man", "Iron Man", "Wonder Woman",
+    "Captain America", "Thor", "Hulk", "Black Widow", "The Flash",
+    "Aquaman", "Green Lantern", "Wolverine", "Deadpool", "Doctor Strange",
+    "Black Panther", "Ant-Man", "The Wasp", "Scarlet Witch", "Vision",
+    "Loki", "Thanos", "Joker", "Harley Quinn", "Lex Luthor",
+    "Darkseid", "Professor X", "Daredevil", "The Punisher",
+    "Venom", "Catwoman", "Robin", "Nightwing", "Batgirl",
+    "The Riddler", "The Penguin",
+    "Green Arrow", "Supergirl", "Shazam", "Cyborg", "Martian Manhunter",
+    "Hawkgirl", "Zatanna", "John Constantine", "Black Adam",
+    "Brainiac", "Doomsday", "Deathstroke", "Starfire", "Raven",
+    "Beast Boy", "Gamora", "Star-Lord", "Rocket Raccoon", "Groot",
+    "Drax", "Mantis", "Nebula", "Falcon", "Winter Soldier",
+    "War Machine", "Hawkeye", "Nick Fury", "Captain Marvel", "Moon Knight",
+    "She-Hulk", "Ms. Marvel", "Shang-Chi", "Silver Surfer", "Galactus",
+    "Green Goblin", "Doctor Octopus", "Sandman", "Mysterio", "Kingpin",
+    "Elektra", "Blade", "Juggernaut", "Red Skull", "Ultron", "Doctor Doom"
   ],
   food: [
-    "Sushi", "Shawarma", "Burger", "Pizza", "Tacos", 
+    "Sushi", "Shawarma", "Burger", "Pizza", "Tacos",
     "Biryani", "Ramen", "Steak", "Falafel", "Gelato",
     "Croissant", "Pad Thai", "Lasagna", "Dim Sum", "Kebab",
     "Fried Chicken", "Paella", "Burrito", "Mac and Cheese", "Pho",
     "Butter Chicken", "Peking Duck", "Fish and Chips", "Hummus", "Tiramisu",
-    "Churros", "Cheesecake", "Pancakes", "Waffles", "Curry"
+    "Churros", "Cheesecake", "Pancakes", "Waffles", "Curry",
+    "Mansaf", "Kabsa", "Mandi", "Machboos", "Koshari",
+    "Fattoush", "Tabbouleh", "Baba Ganoush", "Manakish", "Knafeh",
+    "Baklava", "Umm Ali", "Luqaimat", "Bibimbap", "Kimchi",
+    "Korean BBQ", "Dumplings", "Spring Rolls", "Poke Bowl", "Risotto",
+    "Gnocchi", "Carbonara", "Bolognese", "Lobster Roll", "Clam Chowder",
+    "Jollof Rice", "Arepas", "Empanadas", "Quesadilla", "Nachos",
+    "Hot Dog", "Donut", "Brownie", "Apple Pie", "Creme Brulee",
+    "Mochi", "Crepe", "French Toast", "Caesar Salad", "Greek Salad"
   ],
   animals: [
-    "Capybara", "Peregrine Falcon", "Great White Shark", "Snow Leopard", 
-    "Lion", "Elephant", "Dolphin", "Kangaroo", "Gorilla", "Panda",
-    "Tiger", "Giraffe", "Zebra", "Cheetah", "Orangutan", 
-    "Penguin", "Polar Bear", "Koala", "Rhinoceros", "Hippopotamus",
-    "Ostrich", "Sloth", "Meerkat", "Platypus", "Komodo Dragon",
-    "Bald Eagle", "Octopus", "Chameleon", "Otter", "Hedgehog"
+    "Dog", "Cat", "Horse", "Cow", "Sheep",
+    "Goat", "Pig", "Chicken", "Duck", "Rabbit",
+    "Mouse", "Rat", "Hamster", "Guinea Pig", "Donkey",
+    "Camel", "Deer", "Moose", "Bear", "Wolf",
+    "Fox", "Lion", "Tiger", "Leopard", "Cheetah",
+    "Elephant", "Giraffe", "Zebra", "Rhino", "Hippo",
+    "Monkey", "Gorilla", "Chimpanzee", "Panda", "Koala",
+    "Kangaroo", "Sloth", "Otter", "Raccoon", "Squirrel",
+    "Hedgehog", "Bat", "Eagle", "Owl", "Parrot",
+    "Penguin", "Flamingo", "Peacock", "Swan", "Turkey",
+    "Snake", "Crocodile", "Alligator", "Turtle", "Frog",
+    "Lizard", "Chameleon", "Shark", "Dolphin", "Whale",
+    "Octopus", "Crab", "Lobster", "Jellyfish", "Starfish",
+    "Bee", "Butterfly", "Spider", "Scorpion", "Ant"
   ],
   professions: [
-    "Neurosurgeon", "Astronaut", "Firefighter", "Pilot", "Chef", 
+    "Neurosurgeon", "Astronaut", "Firefighter", "Pilot", "Chef",
     "Lawyer", "Software Engineer", "Artist", "Journalist", "Private Investigator",
     "Architect", "Dentist", "Detective", "Pharmacist", "Plumber",
     "Electrician", "Veterinarian", "Mechanic", "Scientist", "Teacher",
     "Actor", "Musician", "Photographer", "Writer", "Accountant",
-    "Psychologist", "Police Officer", "Paramedic", "Judge", "Magician"
+    "Psychologist", "Police Officer", "Paramedic", "Judge", "Magician",
+    "Civil Engineer", "Data Scientist", "Cybersecurity Analyst", "Game Developer", "UX Designer",
+    "Product Manager", "Entrepreneur", "Real Estate Agent", "Interior Designer", "Fashion Designer",
+    "Barber", "Hair Stylist", "Makeup Artist", "Fitness Trainer", "Nutritionist",
+    "Surgeon", "Nurse", "Radiologist", "Marine Biologist", "Archaeologist",
+    "Historian", "Economist", "Translator", "Diplomat", "Politician",
+    "News Anchor", "Film Director", "Producer", "Stunt Performer", "Voice Actor",
+    "Baker", "Butcher", "Farmer", "Fisherman", "Flight Attendant",
+    "Air Traffic Controller", "Librarian", "Professor", "School Principal", "Security Guard",
+    "Personal Trainer", "Social Worker", "Therapist", "Banker", "Stock Trader"
   ],
   irl_people: [
-    "Cristiano Ronaldo", "Lionel Messi", "Elon Musk", "Barack Obama", 
-    "Gordon Ramsay", "LeBron James", "Taylor Swift", "Tom Cruise", 
-    "Nelson Mandela", "Albert Einstein", "Serena Williams", "Michael Jordan", 
-    "Bill Gates", "Mark Zuckerberg", "Dwayne 'The Rock' Johnson", "Leonardo DiCaprio", 
-    "Keanu Reeves", "Will Smith", "Jackie Chan", "David Beckham", 
-    "Usain Bolt", "Muhammad Ali", "Abraham Lincoln", "Winston Churchill", 
-    "Marilyn Monroe", "Oprah Winfrey", "Queen Elizabeth II", "Virat Kohli", 
-    "Roger Federer", "Rafael Nadal"
+    "Cristiano Ronaldo", "Lionel Messi", "Elon Musk", "Barack Obama",
+    "Gordon Ramsay", "LeBron James", "Taylor Swift", "Tom Cruise",
+    "Nelson Mandela", "Albert Einstein", "Serena Williams", "Michael Jordan",
+    "Bill Gates", "Mark Zuckerberg", "Dwayne 'The Rock' Johnson", "Leonardo DiCaprio",
+    "Keanu Reeves", "Will Smith", "Jackie Chan", "David Beckham",
+    "Usain Bolt", "Muhammad Ali", "Abraham Lincoln", "Winston Churchill",
+    "Queen Elizabeth II", "Virat Kohli",
+    "Roger Federer", "Rafael Nadal", "Charlie Kirk", "Kim Jong Un",
+    "Donald Trump", "Tom Holland", "Chris Hemsworth", "Robert Downey Jr.",
+    "Neymar Jr.", "Kylian Mbappe", "Erling Haaland", "Zinedine Zidane",
+    "Kobe Bryant", "Stephen Curry", "Shaquille O'Neal", "Mike Tyson",
+    "Conor McGregor", "Lewis Hamilton", "Max Verstappen", "Tiger Woods",
+    "Beyonce", "Rihanna", "Ariana Grande", "Drake", "Eminem",
+    "The Weeknd", "Billie Eilish", "MrBeast", "PewDiePie",
+    "Ryan Reynolds", "Hugh Jackman", "Chris Evans", "Scarlett Johansson",
+    "Zendaya", "Emma Watson", "Jennifer Lawrence", "Angelina Jolie",
+    "Brad Pitt", "Johnny Depp", "Morgan Freeman", "Samuel L. Jackson",
+    "Christopher Nolan", "Martin Scorsese", "Quentin Tarantino",
+    "Steve Jobs", "Jeff Bezos", "Warren Buffett", "Mark Ruffalo",
+    "Isaac Newton", "Nikola Tesla", "Stephen Hawking", "Pablo Picasso"
   ]
 };
-
 
 const rooms = {};
 const playerDisconnectTimers = new Map();
@@ -265,7 +329,7 @@ function pickRound(room, selectedCategories) {
   return { categoryToUse, imposterIds };
 }
 
-function sendRoundAssignments(room, imposterIds) {
+function sendRoundAssignments(room) {
   room.players.forEach(player => {
     if (player.offline) return;
     io.to(player.id).emit('gameStarted', buildPlayerGameState(room, player.playerId));
@@ -373,8 +437,8 @@ io.on('connection', (socket) => {
       selectedCategories
     };
 
-    const { imposterIds } = pickRound(room, selectedCategories);
-    sendRoundAssignments(room, imposterIds);
+    pickRound(room, selectedCategories);
+    sendRoundAssignments(room);
   });
 
   socket.on('continueGame', ({ roomCode, pointsData = {}, nextCategories } = {}) => {
@@ -395,10 +459,10 @@ io.on('connection', (socket) => {
     });
 
     room.gameOptions.selectedCategories = nextCategories;
-    const { imposterIds } = pickRound(room, nextCategories);
+    pickRound(room, nextCategories);
 
     emitRoomUpdated(code);
-    sendRoundAssignments(room, imposterIds);
+    sendRoundAssignments(room);
   });
 
   socket.on('revealImposter', (roomCode) => {
