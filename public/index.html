@@ -505,11 +505,25 @@
     socket.on('imposterRevealed', showImposterReveal);
     socket.on('gameReset', ({ players }) => { handleLobbyEntry(currentRoomCode, players); });
 
+    // NEW: Fix for "Zombie Sockets" on mobile phones when screen turns off
+    let lastVisibilityChange = Date.now();
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'hidden') {
+        lastVisibilityChange = Date.now();
+      } else if (document.visibilityState === 'visible') {
+        const timeAsleep = Date.now() - lastVisibilityChange;
         const activeRoom = currentRoomCode || localStorage.getItem('imposter-roomCode');
+        
         if (activeRoom) {
-          socket.emit('rejoinRoom', { roomCode: activeRoom, playerId: myPlayerId });
+          if (timeAsleep > 2000) {
+            // If phone was asleep for > 2 seconds, the connection is a dead zombie.
+            // Force a hard disconnect and reconnect to instantly fetch the new round data.
+            socket.disconnect();
+            socket.connect(); 
+          } else {
+            // It was just a quick flicker, try sending rejoin directly
+            socket.emit('rejoinRoom', { roomCode: activeRoom, playerId: myPlayerId });
+          }
         }
       }
     });
