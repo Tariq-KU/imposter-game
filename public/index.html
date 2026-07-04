@@ -3,64 +3,321 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Imposter Game</title>
+  <title>Party Game Hub</title>
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background-color: #121214; color: #e1e1e6; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
-    .card { background-color: #202024; border-radius: 8px; padding: 30px; width: 100%; max-width: 450px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); text-align: center; }
+    :root {
+      --bg: #121214;
+      --panel: #202024;
+      --panel-2: #29292e;
+      --panel-3: #323238;
+      --text: #e1e1e6;
+      --muted: #8d8d99;
+      --green: #00b37e;
+      --green-dark: #00875f;
+      --purple: #8257e5;
+      --purple-dark: #6a45bd;
+      --red: #f75a68;
+      --yellow: #fba94c;
+    }
+    body {
+      background: radial-gradient(circle at top, #1b1b22 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    .app-card {
+      background-color: var(--panel);
+      border: 1px solid #29292e;
+      border-radius: 18px;
+      padding: 28px;
+      width: 100%;
+      max-width: 980px;
+      box-shadow: 0 16px 50px rgba(0,0,0,0.45);
+      text-align: center;
+    }
+    .narrow { max-width: 520px; }
+    .guesswho-play-layout {
+      max-width: min(1500px, calc(100vw - 12px));
+      padding: clamp(8px, 1.4vw, 22px);
+    }
     .hidden { display: none !important; }
-    h1, h2 { color: #ffffff; margin-top: 0; }
-    input, select, button { width: 100%; padding: 12px; margin: 10px 0; border-radius: 6px; border: none; font-size: 16px; }
-    input, select { background-color: #121214; color: #ffffff; border: 1px solid #29292e; }
-    button { background-color: #00b37e; color: white; font-weight: bold; cursor: pointer; transition: background 0.2s; }
-    button:hover { background-color: #00875f; }
-    button:disabled { background-color: #00875f; opacity: 0.7; cursor: not-allowed; }
-    .secondary-btn { background-color: #29292e; border: 1px solid #323238; }
-    .secondary-btn:hover { background-color: #323238; }
-    .reveal-btn { background-color: #8257e5; margin-top: 20px; }
-    .reveal-btn:hover { background-color: #6a45bd; }
-    ul { list-style: none; padding: 0; text-align: left; background: #121214; border-radius: 6px; padding: 10px; }
-    li { padding: 8px; border-bottom: 1px solid #29292e; display: flex; justify-content: space-between; align-items: center; }
+    h1, h2, h3 { color: #ffffff; margin-top: 0; }
+    p { color: var(--muted); line-height: 1.5; }
+    .subtitle { margin-top: -8px; margin-bottom: 22px; }
+    input, select, textarea, button {
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      border-radius: 10px;
+      border: none;
+      font-size: 16px;
+    }
+    textarea { resize: vertical; min-height: 80px; }
+    input, select, textarea {
+      background-color: var(--bg);
+      color: #ffffff;
+      border: 1px solid var(--panel-2);
+    }
+    input[type="file"] { padding: 10px; cursor: pointer; }
+    button {
+      background-color: var(--green);
+      color: white;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.15s, background 0.2s, opacity 0.2s;
+    }
+    button:hover { background-color: var(--green-dark); transform: translateY(-1px); }
+    button:disabled { background-color: var(--green-dark); opacity: 0.55; cursor: not-allowed; transform: none; }
+    .secondary-btn { background-color: var(--panel-2); border: 1px solid var(--panel-3); }
+    .secondary-btn:hover { background-color: var(--panel-3); }
+    .purple-btn { background-color: var(--purple); }
+    .purple-btn:hover { background-color: var(--purple-dark); }
+    .danger-btn { background-color: var(--panel-2); border: 1px solid var(--red); color: var(--red); }
+    .danger-btn:hover { background-color: #3a2026; }
+    .warning-btn { background-color: var(--yellow); color: #17130d; }
+    .warning-btn:hover { background-color: #d98b35; }
+    .button-row { display: grid; gap: 10px; grid-template-columns: 1fr; }
+    @media (min-width: 680px) { .button-row.two { grid-template-columns: 1fr 1fr; } }
+    .game-choice-grid { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 22px; }
+    @media (min-width: 760px) { .game-choice-grid { grid-template-columns: 1fr 1fr; } }
+    .game-choice {
+      text-align: left;
+      padding: 22px;
+      background: #18181c;
+      border: 1px solid var(--panel-2);
+      border-radius: 16px;
+      min-height: 190px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .game-choice h2 { margin-bottom: 6px; }
+    .game-choice p { margin-bottom: 18px; }
+    .admin-link { margin-top: 18px; }
+    ul { list-style: none; padding: 0; text-align: left; background: var(--bg); border-radius: 10px; padding: 10px; }
+    li { padding: 9px; border-bottom: 1px solid var(--panel-2); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
     li:last-child { border-bottom: none; }
-    .role-box { padding: 20px; border-radius: 6px; margin: 20px 0; font-size: 24px; font-weight: bold; letter-spacing: 1px; }
-    .role-imposter { background-color: #f75a68; color: #ffffff; }
-    .role-crewmate { background-color: #00b37e; color: #ffffff; }
-    .role-hidden { background-color: #323238; color: #ffffff; border: 1px dashed #8d8d99; }
-    .error { color: #f75a68; margin: 10px 0; font-size: 14px; }
-    .host-tag { background: #8257e5; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
-    .offline-tag { color: #f75a68; font-size: 12px; margin-left: 8px; font-style: italic; }
+    .role-box { padding: 20px; border-radius: 10px; margin: 20px 0; font-size: 24px; font-weight: bold; letter-spacing: 1px; }
+    .role-imposter { background-color: var(--red); color: #ffffff; }
+    .role-crewmate { background-color: var(--green); color: #ffffff; }
+    .role-hidden { background-color: var(--panel-3); color: #ffffff; border: 1px dashed var(--muted); }
+    .error { color: var(--red); margin: 10px 0; font-size: 14px; min-height: 18px; }
+    .success { color: var(--green); margin: 10px 0; font-size: 14px; min-height: 18px; }
+    .host-tag, .pill {
+      background: var(--purple);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-weight: 800;
+      color: #fff;
+      white-space: nowrap;
+    }
+    .pill.green { background: var(--green); }
+    .pill.yellow { background: var(--yellow); color: #17130d; }
+    .pill.gray { background: var(--panel-3); color: var(--text); }
+    .offline-tag { color: var(--red); font-size: 12px; margin-left: 8px; font-style: italic; }
     .offline-player { opacity: 0.5; }
-    .reveal-banner { background-color: #f75a68; padding: 15px; border-radius: 6px; margin: 20px 0; animation: pop 0.4s ease-out; }
-    
-    /* Multi-select category checkboxes styling */
-    .checkbox-group { text-align: left; background: #121214; padding: 10px; border-radius: 6px; border: 1px solid #29292e; max-height: 150px; overflow-y: auto; margin-top: 5px; display: flex; flex-direction: column; gap: 8px; }
-    .checkbox-group label { display: flex; align-items: center; cursor: pointer; font-size: 14px; margin: 0; color: #e1e1e6; }
+    .reveal-banner { background-color: var(--red); padding: 15px; border-radius: 10px; margin: 20px 0; animation: pop 0.4s ease-out; }
+    .checkbox-group {
+      text-align: left;
+      background: var(--bg);
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid var(--panel-2);
+      max-height: 160px;
+      overflow-y: auto;
+      margin-top: 5px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .checkbox-group label { display: flex; align-items: center; cursor: pointer; font-size: 14px; margin: 0; color: var(--text); }
     .checkbox-group input[type="checkbox"] { width: 18px; height: 18px; margin: 0 10px 0 0; cursor: pointer; flex-shrink: 0; }
-    
-    @keyframes pop { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+    .split-layout { display: grid; gap: 18px; grid-template-columns: 1fr; align-items: start; }
+    @media (min-width: 900px) { .split-layout { grid-template-columns: 1.35fr 0.8fr; } }
+    .guesswho-play-layout .split-layout { gap: clamp(8px, 1vw, 14px); }
+    @media (min-width: 900px) {
+      .guesswho-play-layout .split-layout {
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+      }
+    }
+    .panel {
+      background: #18181c;
+      border: 1px solid var(--panel-2);
+      border-radius: 14px;
+      padding: 16px;
+      text-align: left;
+    }
+    .top-bar { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+    .top-bar h2 { margin: 0; }
+    .room-code { color: var(--purple); font-weight: 900; letter-spacing: 1px; }
+    .character-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .guesswho-play-layout .panel { padding: clamp(8px, 1vw, 14px); }
+    .guesswho-play-layout .top-bar { margin-bottom: 10px; }
+    .guesswho-play-layout h2, .guesswho-play-layout h3 { margin-bottom: 8px; }
+    .guesswho-play-layout .character-grid {
+      grid-template-columns: repeat(auto-fit, minmax(clamp(64px, 7vw, 98px), 1fr));
+      gap: clamp(5px, 0.8vw, 10px);
+      margin-top: 8px;
+    }
+    .character-card {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      border: 2px solid var(--panel-2);
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.15s, opacity 0.2s, border-color 0.2s, filter 0.2s;
+      text-align: center;
+      min-height: 150px;
+    }
+    .guesswho-play-layout .character-card { min-height: 0; border-radius: 10px; }
+    .character-card:hover { transform: translateY(-2px); border-color: var(--purple); }
+    .character-card.selected { border-color: var(--green); box-shadow: 0 0 0 2px rgba(0,179,126,0.2); }
+    .character-card.eliminated { opacity: 0.28; filter: grayscale(1); }
+    .character-card img {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      object-fit: cover;
+      display: block;
+      background: var(--panel-2);
+    }
+    .character-card .name {
+      padding: 8px;
+      font-weight: 800;
+      font-size: 13px;
+      color: #fff;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1.2;
+      unicode-bidi: plaintext;
+    }
+    .guesswho-play-layout .character-card .name {
+      min-height: 30px;
+      padding: 4px 5px;
+      font-size: clamp(10px, 0.9vw, 12px);
+      line-height: 1.12;
+    }
+    .secret-card { display: flex; gap: 12px; align-items: center; background: var(--bg); border-radius: 12px; padding: 10px; border: 1px solid var(--panel-2); }
+    .secret-card img { width: 74px; height: 74px; border-radius: 10px; object-fit: cover; background: var(--panel-2); }
+    .chat-box { height: 240px; overflow-y: auto; background: var(--bg); border: 1px solid var(--panel-2); border-radius: 12px; padding: 10px; margin: 10px 0; }
+    .guesswho-play-layout .chat-box { height: clamp(140px, 30vh, 230px); }
+    .chat-message { margin-bottom: 10px; font-size: 14px; line-height: 1.35; }
+    .chat-message .name { color: var(--green); font-weight: 900; }
+    .chat-message.system { color: var(--yellow); font-style: italic; }
+    .chat-form { display: flex; gap: 8px; align-items: stretch; }
+    .chat-form input { margin: 0; }
+    .chat-form button { width: 92px; margin: 0; }
+    .reveal-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 680px) { .reveal-grid { grid-template-columns: 1fr 1fr; } }
+    .picker-tools { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 8px; }
+    @media (min-width: 720px) { .picker-tools { grid-template-columns: 1fr auto auto; align-items: center; } }
+    .picker-tools input { margin: 0; }
+    .picker-tools button { margin: 0; width: auto; min-width: 120px; }
+    .character-picker-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+      gap: 10px;
+      max-height: 360px;
+      overflow-y: auto;
+      background: var(--bg);
+      border: 1px solid var(--panel-2);
+      border-radius: 12px;
+      padding: 10px;
+      margin-top: 10px;
+    }
+    .picker-card {
+      margin: 0;
+      padding: 0;
+      background: #18181c;
+      border: 2px solid var(--panel-2);
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      text-align: center;
+    }
+    .picker-card.selected { border-color: var(--green); box-shadow: 0 0 0 2px rgba(0,179,126,0.22); }
+    .picker-card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--panel-2); }
+    .picker-card .name { padding: 6px; font-weight: 800; font-size: 12px; min-height: 38px; display: flex; align-items: center; justify-content: center; unicode-bidi: plaintext; }
+    .inline-checkbox { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--text); }
+    .inline-checkbox input { width: auto; margin: 0; }
+    .admin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-top: 14px; }
+    .admin-card { background: var(--bg); border: 1px solid var(--panel-2); border-radius: 12px; overflow: hidden; text-align: center; }
+    .admin-card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--panel-2); }
+    .admin-card .name { padding: 8px; font-weight: 800; font-size: 13px; min-height: 44px; unicode-bidi: plaintext; }
+    .admin-card button { border-radius: 0; margin: 0; font-size: 13px; padding: 8px; }
+    @media (max-width: 760px) {
+      body { padding: 6px; }
+      .app-card { padding: 18px; }
+      .guesswho-play-layout { border-radius: 12px; }
+      .guesswho-play-layout .panel { padding: 8px; }
+      .guesswho-play-layout .character-grid { grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); gap: 6px; }
+      .guesswho-play-layout .small-note { font-size: 12px; margin: 3px 0; }
+      .guesswho-play-layout .secret-card { padding: 6px; gap: 8px; }
+      .guesswho-play-layout .secret-card img { width: 54px; height: 54px; }
+    }
+    .small-note { font-size: 13px; color: var(--muted); margin: 6px 0; }
+    @keyframes pop { 0% { transform: scale(0.96); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
   </style>
 </head>
 <body>
-
-  <div class="card">
-    <!-- Screen 1: Welcome / Join Setup -->
-    <div id="setup-screen">
-      <h1>Imposter Game</h1>
-      <input type="text" id="player-name" placeholder="Enter Your Name" maxlength="15">
-      <hr style="border-color: #29292e; margin: 20px 0;">
-      <button id="create-room-btn">Create New Game</button>
-      <input type="text" id="room-code-input" placeholder="Enter 4-Letter Room Code" autocomplete="off">
-      <button id="join-room-btn" class="secondary-btn">Join Game</button>
-      <div id="setup-error" class="error"></div>
+  <div id="app-card" class="app-card narrow">
+    <!-- Game selection -->
+    <div id="game-select-screen" class="screen">
+      <h1>Party Game Hub</h1>
+      <p class="subtitle">Choose a game mode and start a private room with your friends.</p>
+      <div class="game-choice-grid">
+        <div class="game-choice">
+          <div>
+            <h2>Imposter Game</h2>
+            <p>Classic hidden-role word game with categories, imposters, reveals, and manual scoring.</p>
+          </div>
+          <button id="select-imposter-btn">Play Imposter</button>
+        </div>
+        <div class="game-choice">
+          <div>
+            <h2>Guess Who</h2>
+            <p>Two players, shared character board, private secret picks, local eliminations, chat, and points.</p>
+          </div>
+          <button id="select-guesswho-btn" class="purple-btn">Play Guess Who</button>
+        </div>
+      </div>
+      <button id="select-admin-btn" class="secondary-btn admin-link">Admin: Manage Guess Who Characters</button>
     </div>
 
-    <!-- Screen 2: Waiting Lobby -->
-    <div id="lobby-screen" class="hidden">
-      <h2>Room Code: <span id="display-room-code" style="color: #8257e5;">----</span></h2>
-      <div style="text-align: left; margin-bottom: 5px; font-size: 14px; color: #8d8d99;">Players Joined (Scores):</div>
+    <!-- Imposter setup -->
+    <div id="setup-screen" class="screen hidden">
+      <h1>Imposter Game</h1>
+      <p class="subtitle">Create a room or join with a 4-letter code.</p>
+      <input type="text" id="player-name" placeholder="Enter Your Name" maxlength="15">
+      <button id="create-room-btn">Create New Imposter Game</button>
+      <input type="text" id="room-code-input" placeholder="Enter 4-Letter Room Code" autocomplete="off">
+      <button id="join-room-btn" class="secondary-btn">Join Imposter Game</button>
+      <div id="setup-error" class="error"></div>
+      <button id="back-from-imposter-setup-btn" class="secondary-btn">Back to Games</button>
+    </div>
+
+    <!-- Imposter lobby -->
+    <div id="lobby-screen" class="screen hidden">
+      <div class="top-bar">
+        <h2>Imposter Room: <span id="display-room-code" class="room-code">----</span></h2>
+      </div>
+      <div style="text-align: left; margin-bottom: 5px; font-size: 14px; color: var(--muted);">Players Joined (Scores):</div>
       <ul id="player-list"></ul>
 
-      <!-- Host Controls Panel -->
       <div id="host-controls" class="hidden">
         <label for="mode-select" style="display:block; text-align:left; margin-top:15px; font-size:14px;">Game Mode:</label>
         <select id="mode-select">
@@ -80,58 +337,45 @@
 
         <label for="imposter-count" style="display:block; text-align:left; margin-top:10px; font-size:14px;">Number of Imposters:</label>
         <input type="number" id="imposter-count" value="1" min="1" max="5">
-        
         <button id="start-game-btn">Start Game</button>
-        <button id="reset-scores-btn" class="secondary-btn" style="margin-top: 10px; border-color: #f75a68; color: #f75a68;">Reset Scores to Zero</button>
+        <button id="reset-scores-btn" class="secondary-btn" style="margin-top: 10px; border-color: var(--red); color: var(--red);">Reset Scores to Zero</button>
       </div>
-      
-      <div id="lobby-wait-msg" style="margin-top: 20px; color: #8d8d99; font-style: italic;">
+
+      <div id="lobby-wait-msg" style="margin-top: 20px; color: var(--muted); font-style: italic;">
         Waiting for the host to select settings and start...
       </div>
       <div id="lobby-error" class="error"></div>
-      
-      <button id="leave-lobby-btn" class="secondary-btn" style="margin-top: 15px; border-color: #f75a68; color: #f75a68;">Leave Room</button>
+      <button id="leave-lobby-btn" class="danger-btn" style="margin-top: 15px;">Leave Room</button>
     </div>
 
-    <!-- Screen 3: Active Game Word Reveal -->
-    <div id="game-screen" class="hidden">
+    <!-- Imposter active game -->
+    <div id="game-screen" class="screen hidden">
       <h2 id="role-title">Your Role Assignment</h2>
-      <p>Category: <span id="game-category-reveal" style="font-weight: bold;">-</span></p>
-      
-      <!-- Role Box (Hidden in Hidden Mode) -->
+      <p>Category: <span id="game-category-reveal" style="font-weight: bold; color:#fff;">-</span></p>
       <div id="role-display-card" class="role-box"></div>
-      
-      <!-- Word Display -->
       <div id="word-display-area">
-        <p style="color: #8d8d99;">Secret Word:</p>
+        <p style="color: var(--muted);">Secret Word:</p>
         <h3 id="game-word-reveal" style="font-size: 28px; margin: 10px 0; color: #ffffff;">-</h3>
       </div>
 
-      <!-- Result Banner -->
       <div id="reveal-banner" class="hidden reveal-banner">
         <h3 style="margin: 0;">The Imposter Was:</h3>
         <h2 id="revealed-imposter-name" style="margin: 5px 0 0 0; color: #fff;">-</h2>
-        <p style="margin: 10px 0 0 0; font-size: 14px;">Imposter, guess the Crewmate word!</p>
+        <p style="margin: 10px 0 0 0; font-size: 14px; color:#fff;">Imposter, guess the Crewmate word!</p>
       </div>
 
-      <p id="game-instructions" style="font-size: 14px; color: #8d8d99; margin-top: 30px;">
-        Discuss your words!
-      </p>
+      <p id="game-instructions" style="font-size: 14px; color: var(--muted); margin-top: 30px;">Discuss your words!</p>
+      <button id="reveal-imposter-btn" class="purple-btn hidden">End Round / Reveal (Host Only)</button>
 
-      <button id="reveal-imposter-btn" class="reveal-btn hidden">End Round / Reveal (Host Only)</button>
-      
-      <!-- Host Controls for Ending/Continuing -->
       <div id="game-host-controls" class="hidden" style="margin-top: 15px; display: flex; gap: 10px; flex-direction: column;">
-        <button id="show-continue-panel-btn" style="margin: 0; background-color: #00b37e;">Continue Game (Award Points)</button>
+        <button id="show-continue-panel-btn" style="margin: 0;">Continue Game (Award Points)</button>
         <button id="play-again-btn" class="secondary-btn" style="margin: 0;">End Game & Return to Lobby</button>
       </div>
 
-      <!-- Point Assignment Panel -->
-      <div id="continue-panel" class="hidden" style="margin-top: 20px; background: #29292e; padding: 15px; border-radius: 8px;">
+      <div id="continue-panel" class="hidden" style="margin-top: 20px; background: var(--panel-2); padding: 15px; border-radius: 12px;">
         <h3 style="margin-top: 0;">Award Points & Continue</h3>
-        <p style="font-size: 13px; color: #8d8d99; margin-bottom: 10px;">Give points based on performance.</p>
+        <p style="font-size: 13px; color: var(--muted); margin-bottom: 10px;">Give points based on performance.</p>
         <div id="point-inputs-container" style="text-align: left; margin-bottom: 15px; max-height: 150px; overflow-y: auto;"></div>
-        
         <label style="display:block; text-align:left; margin-top:10px; font-size:14px;">Next Categories:</label>
         <div id="continue-categories" class="checkbox-group">
           <label><input type="checkbox" value="anime"> Anime Characters (Demon Slayer / AOT)</label>
@@ -141,21 +385,162 @@
           <label><input type="checkbox" value="professions"> Professions</label>
           <label><input type="checkbox" value="irl_people"> Famous IRL People / Athletes</label>
         </div>
-        
-        <div style="display: flex; gap: 10px; margin-top: 15px;">
+        <div class="button-row two" style="margin-top: 15px;">
           <button id="confirm-continue-btn" style="margin: 0;">Start Next Round</button>
           <button id="cancel-continue-btn" class="secondary-btn" style="margin: 0;">Cancel</button>
         </div>
       </div>
 
-      <!-- Live Leaderboard inside Game Screen -->
-      <div id="game-leaderboard" style="margin-top: 30px; background: #202024; border: 1px solid #29292e; padding: 15px; border-radius: 8px;">
-        <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #e1e1e6; text-align: left;">Live Leaderboard</h3>
+      <div id="game-leaderboard" class="panel" style="margin-top: 30px;">
+        <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px;">Live Leaderboard</h3>
         <ul id="game-player-list" style="margin-bottom: 0;"></ul>
       </div>
-      
-      <button id="leave-game-btn" class="secondary-btn" style="margin-top: 15px; border-color: #f75a68; color: #f75a68;">Leave Game</button>
+      <button id="leave-game-btn" class="danger-btn" style="margin-top: 15px;">Leave Game</button>
+    </div>
 
+    <!-- Guess Who setup -->
+    <div id="gw-setup-screen" class="screen hidden">
+      <h1>Guess Who</h1>
+      <p class="subtitle">Two players only. Use the saved admin character library.</p>
+      <input type="text" id="gw-player-name" placeholder="Enter Your Name" maxlength="15">
+      <button id="gw-create-room-btn" class="purple-btn">Create Guess Who Room</button>
+      <input type="text" id="gw-room-code-input" placeholder="Enter 4-Letter Room Code" autocomplete="off">
+      <button id="gw-join-room-btn" class="secondary-btn">Join Guess Who Room</button>
+      <p id="gw-library-count" class="small-note">Loading character library...</p>
+      <div id="gw-setup-error" class="error"></div>
+      <button id="back-from-gw-setup-btn" class="secondary-btn">Back to Games</button>
+    </div>
+
+    <!-- Guess Who lobby -->
+    <div id="gw-lobby-screen" class="screen hidden">
+      <div class="top-bar">
+        <h2>Guess Who Room: <span id="gw-display-room-code" class="room-code">----</span></h2>
+        <span class="pill gray">2 players only</span>
+      </div>
+      <div class="split-layout">
+        <div class="panel">
+          <h3>Players</h3>
+          <ul id="gw-player-list"></ul>
+          <p id="gw-lobby-status" class="small-note">Waiting for another player...</p>
+        </div>
+        <div id="gw-host-controls" class="panel hidden">
+          <h3>Host Controls</h3>
+          <label for="gw-board-source">Board source</label>
+          <select id="gw-board-source">
+            <option value="random">Randomize from saved library</option>
+            <option value="selected">Select characters manually</option>
+          </select>
+
+          <div id="gw-random-options">
+            <label class="inline-checkbox"><input type="checkbox" id="gw-auto-fit" checked> Auto-fit board to both players' screens</label>
+            <label for="gw-board-size">Characters if auto-fit is off</label>
+            <input type="number" id="gw-board-size" min="6" max="60" value="24">
+            <p id="gw-auto-fit-note" class="small-note">Auto-fit will choose a safe amount for the smaller screen.</p>
+          </div>
+
+          <div id="gw-manual-options" class="hidden">
+            <p class="small-note">Choose exactly which saved characters should appear on this board.</p>
+            <div class="picker-tools">
+              <input type="search" id="gw-character-search" placeholder="Search characters...">
+              <button id="gw-select-visible-btn" type="button" class="secondary-btn">Select Visible</button>
+              <button id="gw-clear-selection-btn" type="button" class="secondary-btn">Clear</button>
+            </div>
+            <p id="gw-selected-count" class="small-note">0 selected</p>
+            <div id="gw-character-picker" class="character-picker-grid"></div>
+          </div>
+
+          <p id="gw-library-count-lobby" class="small-note">Library count: -</p>
+          <button id="gw-start-round-btn" class="purple-btn">Start Character Selection</button>
+          <button id="gw-reset-scores-btn" class="secondary-btn">Reset Guess Who Scores</button>
+        </div>
+      </div>
+      <div id="gw-lobby-error" class="error"></div>
+      <button id="gw-leave-lobby-btn" class="danger-btn">Leave Guess Who Room</button>
+    </div>
+
+    <!-- Guess Who secret selection -->
+    <div id="gw-selection-screen" class="screen hidden">
+      <div class="top-bar">
+        <h2>Pick Your Secret Character</h2>
+        <span>Room <span id="gw-selection-room-code" class="room-code">----</span></span>
+      </div>
+      <p id="gw-selection-help" class="small-note">Choose one character. The other player will not see your choice.</p>
+      <div id="gw-selected-secret-preview" class="panel hidden"></div>
+      <div id="gw-selection-grid" class="character-grid"></div>
+      <button id="gw-confirm-secret-btn" class="purple-btn" disabled>Confirm Secret Character</button>
+      <div id="gw-selection-error" class="error"></div>
+      <button id="gw-leave-selection-btn" class="danger-btn">Leave Guess Who Room</button>
+    </div>
+
+    <!-- Guess Who board / chat -->
+    <div id="gw-game-screen" class="screen hidden">
+      <div class="top-bar">
+        <h2>Guess Who</h2>
+        <span>Room <span id="gw-game-room-code" class="room-code">----</span></span>
+      </div>
+      <div class="split-layout">
+        <div class="panel">
+          <h3>Your Board</h3>
+          <p class="small-note">Tap a character to grey them out. This is private to your screen only.</p>
+          <div id="gw-my-secret" class="secret-card hidden"></div>
+          <div id="gw-board-grid" class="character-grid"></div>
+        </div>
+        <div class="panel">
+          <h3>Game Chat</h3>
+          <div id="gw-chat-box" class="chat-box"></div>
+          <form id="gw-chat-form" class="chat-form">
+            <input type="text" id="gw-chat-input" placeholder="Ask a question or make a guess..." maxlength="400" autocomplete="off">
+            <button type="submit">Send</button>
+          </form>
+          <h3 style="margin-top: 18px;">Players</h3>
+          <ul id="gw-game-player-list"></ul>
+          <button id="gw-reveal-btn" class="warning-btn hidden">Reveal Characters</button>
+          <div id="gw-revealed-panel" class="hidden" style="margin-top: 16px;">
+            <h3>Revealed Characters</h3>
+            <div id="gw-reveal-grid" class="reveal-grid"></div>
+            <div id="gw-points-panel" class="panel" style="margin-top: 14px;">
+              <h3>Assign Points</h3>
+              <div id="gw-point-inputs"></div>
+              <label class="inline-checkbox"><input type="checkbox" id="gw-next-auto-fit" checked> Auto-fit next random board</label>
+              <label for="gw-next-board-size">Next board size if auto-fit is off</label>
+              <input type="number" id="gw-next-board-size" min="6" max="60" value="24">
+              <p class="small-note">Next Round randomizes again. Return to lobby if you want to manually choose a new board.</p>
+              <div class="button-row two">
+                <button id="gw-next-round-btn" class="purple-btn">Save Points & Next Round</button>
+                <button id="gw-return-lobby-btn" class="secondary-btn">Save Points & Lobby</button>
+              </div>
+            </div>
+          </div>
+          <div id="gw-game-error" class="error"></div>
+          <button id="gw-leave-game-btn" class="danger-btn">Leave Guess Who Room</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Admin library manager -->
+    <div id="admin-screen" class="screen hidden">
+      <h1>Guess Who Admin Library</h1>
+      <p class="subtitle">Upload character images once. Everyone can use this saved library in Guess Who rooms.</p>
+      <div class="panel">
+        <label for="admin-password-input">Admin upload password</label>
+        <input type="password" id="admin-password-input" placeholder="ADMIN_UPLOAD_PASSWORD">
+        <label for="admin-file-input">Upload images</label>
+        <input type="file" id="admin-file-input" accept="image/png,image/jpeg,image/webp" multiple>
+        <label for="admin-folder-input">Or upload a folder of images</label>
+        <input type="file" id="admin-folder-input" accept="image/png,image/jpeg,image/webp" webkitdirectory multiple>
+        <button id="admin-upload-btn" class="purple-btn">Upload Selected Images</button>
+        <p class="small-note">Names are read from filenames. Example: <b>robert-downey-jr.webp</b> becomes <b>Robert Downey Jr</b>.</p>
+        <div id="admin-status" class="success"></div>
+        <div id="admin-error" class="error"></div>
+      </div>
+      <div class="panel" style="margin-top: 16px;">
+        <div class="top-bar">
+          <h3>Saved Characters</h3>
+          <span id="admin-library-count" class="pill gray">0</span>
+        </div>
+        <div id="admin-library-grid" class="admin-grid"></div>
+      </div>
+      <button id="back-from-admin-btn" class="secondary-btn">Back to Games</button>
     </div>
   </div>
 

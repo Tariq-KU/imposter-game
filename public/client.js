@@ -6,7 +6,9 @@ const socket = io({
   timeout: 20000
 });
 
-// --- Persistence & Session Tracking ---
+// --------------------------
+// Shared state and helpers
+// --------------------------
 let myPlayerId = localStorage.getItem('imposter-playerId');
 if (!myPlayerId) {
   myPlayerId = window.crypto && crypto.randomUUID
@@ -22,8 +24,119 @@ let currentPlayers = [];
 let intentionallyLeftRoom = false;
 let lastStateSyncRequest = 0;
 let lastVisibilityChange = Date.now();
+let guessWhoRoomCode = '';
+let guessWhoPlayers = [];
+let guessWhoBoard = [];
+let guessWhoMessages = [];
+let guessWhoStatus = 'lobby';
+let guessWhoRoundId = 0;
+let guessWhoMySecret = null;
+let guessWhoRevealedSecrets = [];
+let guessWhoSelectedCharacterId = '';
+let guessWhoEliminated = new Set();
+let guessWhoLibraryCount = 0;
+let guessWhoLibrary = [];
+let guessWhoManualSelected = new Set();
+let guessWhoLibraryFilter = '';
+let viewportUpdateTimer = null;
 
-// DOM Elements
+const appCard = document.getElementById('app-card');
+const screens = Array.from(document.querySelectorAll('.screen'));
+
+function showScreen(screenId, wide = false) {
+  screens.forEach(screen => screen.classList.add('hidden'));
+  const screen = document.getElementById(screenId);
+  if (screen) screen.classList.remove('hidden');
+  appCard.classList.toggle('narrow', !wide);
+  appCard.classList.toggle('guesswho-play-layout', ['gw-selection-screen', 'gw-game-screen'].includes(screenId));
+
+  if (['gw-lobby-screen', 'gw-selection-screen', 'gw-game-screen'].includes(screenId)) {
+    setTimeout(sendGuessWhoViewportInfo, 150);
+  }
+}
+
+function setActiveGame(gameType) {
+  if (gameType) {
+    localStorage.setItem('party-activeGame', gameType);
+  } else {
+    localStorage.removeItem('party-activeGame');
+  }
+}
+
+function getSavedName() {
+  return localStorage.getItem('imposter-playerName') || '';
+}
+
+function saveName(name) {
+  localStorage.setItem('imposter-playerName', name);
+  if (playerNameInput) playerNameInput.value = name;
+  if (gwPlayerNameInput) gwPlayerNameInput.value = name;
+}
+
+function textOrDash(value) {
+  return value || '-';
+}
+
+function createElement(tagName, className, text) {
+  const element = document.createElement(tagName);
+  if (className) element.className = className;
+  if (typeof text === 'string') element.textContent = text;
+  return element;
+}
+
+function setMessage(element, message) {
+  if (element) element.textContent = message || '';
+}
+
+function getTimeLabel(timestamp) {
+  try {
+    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch (error) {
+    return '';
+  }
+}
+
+// --------------------------
+// Game select
+// --------------------------
+const selectImposterBtn = document.getElementById('select-imposter-btn');
+const selectGuessWhoBtn = document.getElementById('select-guesswho-btn');
+const selectAdminBtn = document.getElementById('select-admin-btn');
+const backFromImposterSetupBtn = document.getElementById('back-from-imposter-setup-btn');
+const backFromGwSetupBtn = document.getElementById('back-from-gw-setup-btn');
+const backFromAdminBtn = document.getElementById('back-from-admin-btn');
+
+function showGameSelect() {
+  showScreen('game-select-screen', false);
+  setActiveGame('');
+}
+
+selectImposterBtn.addEventListener('click', () => {
+  showScreen('setup-screen', false);
+  setMessage(setupError, '');
+});
+
+selectGuessWhoBtn.addEventListener('click', async () => {
+  showScreen('gw-setup-screen', false);
+  setMessage(gwSetupError, '');
+  updateGuessWhoAutoFitNote();
+  if (gwAutoFitCheckbox) gwBoardSizeInput.disabled = gwAutoFitCheckbox.checked;
+  if (gwNextAutoFit) gwNextBoardSize.disabled = gwNextAutoFit.checked;
+  await refreshGuessWhoLibraryCount();
+});
+
+selectAdminBtn.addEventListener('click', async () => {
+  showScreen('admin-screen', true);
+  await loadAdminLibrary();
+});
+
+backFromImposterSetupBtn.addEventListener('click', showGameSelect);
+backFromGwSetupBtn.addEventListener('click', showGameSelect);
+backFromAdminBtn.addEventListener('click', showGameSelect);
+
+// --------------------------
+// Imposter DOM elements
+// --------------------------
 const setupScreen = document.getElementById('setup-screen');
 const lobbyScreen = document.getElementById('lobby-screen');
 const gameScreen = document.getElementById('game-screen');
@@ -37,8 +150,6 @@ const hostControls = document.getElementById('host-controls');
 const lobbyWaitMsg = document.getElementById('lobby-wait-msg');
 const createRoomBtn = document.getElementById('create-room-btn');
 const joinRoomBtn = document.getElementById('join-room-btn');
-
-// Game Elements
 const gameCategoryReveal = document.getElementById('game-category-reveal');
 const roleDisplayCard = document.getElementById('role-display-card');
 const wordDisplayArea = document.getElementById('word-display-area');
@@ -59,56 +170,152 @@ const resetScoresBtn = document.getElementById('reset-scores-btn');
 const leaveLobbyBtn = document.getElementById('leave-lobby-btn');
 const leaveGameBtn = document.getElementById('leave-game-btn');
 
-// --- On Load Setup ---
-const savedName = localStorage.getItem('imposter-playerName');
-if (savedName) playerNameInput.value = savedName;
+// --------------------------
+// Guess Who DOM elements
+// --------------------------
+const gwSetupError = document.getElementById('gw-setup-error');
+const gwPlayerNameInput = document.getElementById('gw-player-name');
+const gwRoomCodeInput = document.getElementById('gw-room-code-input');
+const gwCreateRoomBtn = document.getElementById('gw-create-room-btn');
+const gwJoinRoomBtn = document.getElementById('gw-join-room-btn');
+const gwLibraryCount = document.getElementById('gw-library-count');
+const gwLibraryCountLobby = document.getElementById('gw-library-count-lobby');
+const gwDisplayRoomCode = document.getElementById('gw-display-room-code');
+const gwPlayerList = document.getElementById('gw-player-list');
+const gwGamePlayerList = document.getElementById('gw-game-player-list');
+const gwLobbyStatus = document.getElementById('gw-lobby-status');
+const gwHostControls = document.getElementById('gw-host-controls');
+const gwBoardSourceSelect = document.getElementById('gw-board-source');
+const gwRandomOptions = document.getElementById('gw-random-options');
+const gwManualOptions = document.getElementById('gw-manual-options');
+const gwAutoFitCheckbox = document.getElementById('gw-auto-fit');
+const gwAutoFitNote = document.getElementById('gw-auto-fit-note');
+const gwBoardSizeInput = document.getElementById('gw-board-size');
+const gwCharacterSearch = document.getElementById('gw-character-search');
+const gwCharacterPicker = document.getElementById('gw-character-picker');
+const gwSelectedCount = document.getElementById('gw-selected-count');
+const gwSelectVisibleBtn = document.getElementById('gw-select-visible-btn');
+const gwClearSelectionBtn = document.getElementById('gw-clear-selection-btn');
+const gwStartRoundBtn = document.getElementById('gw-start-round-btn');
+const gwResetScoresBtn = document.getElementById('gw-reset-scores-btn');
+const gwLobbyError = document.getElementById('gw-lobby-error');
+const gwLeaveLobbyBtn = document.getElementById('gw-leave-lobby-btn');
+const gwSelectionRoomCode = document.getElementById('gw-selection-room-code');
+const gwSelectionHelp = document.getElementById('gw-selection-help');
+const gwSelectedSecretPreview = document.getElementById('gw-selected-secret-preview');
+const gwSelectionGrid = document.getElementById('gw-selection-grid');
+const gwConfirmSecretBtn = document.getElementById('gw-confirm-secret-btn');
+const gwSelectionError = document.getElementById('gw-selection-error');
+const gwLeaveSelectionBtn = document.getElementById('gw-leave-selection-btn');
+const gwGameRoomCode = document.getElementById('gw-game-room-code');
+const gwMySecret = document.getElementById('gw-my-secret');
+const gwBoardGrid = document.getElementById('gw-board-grid');
+const gwChatBox = document.getElementById('gw-chat-box');
+const gwChatForm = document.getElementById('gw-chat-form');
+const gwChatInput = document.getElementById('gw-chat-input');
+const gwRevealBtn = document.getElementById('gw-reveal-btn');
+const gwRevealedPanel = document.getElementById('gw-revealed-panel');
+const gwRevealGrid = document.getElementById('gw-reveal-grid');
+const gwPointsPanel = document.getElementById('gw-points-panel');
+const gwPointInputs = document.getElementById('gw-point-inputs');
+const gwNextAutoFit = document.getElementById('gw-next-auto-fit');
+const gwNextBoardSize = document.getElementById('gw-next-board-size');
+const gwNextRoundBtn = document.getElementById('gw-next-round-btn');
+const gwReturnLobbyBtn = document.getElementById('gw-return-lobby-btn');
+const gwGameError = document.getElementById('gw-game-error');
+const gwLeaveGameBtn = document.getElementById('gw-leave-game-btn');
 
+// --------------------------
+// Admin DOM elements
+// --------------------------
+const adminPasswordInput = document.getElementById('admin-password-input');
+const adminFileInput = document.getElementById('admin-file-input');
+const adminFolderInput = document.getElementById('admin-folder-input');
+const adminUploadBtn = document.getElementById('admin-upload-btn');
+const adminStatus = document.getElementById('admin-status');
+const adminError = document.getElementById('admin-error');
+const adminLibraryCount = document.getElementById('admin-library-count');
+const adminLibraryGrid = document.getElementById('admin-library-grid');
+
+const savedName = getSavedName();
+if (savedName) {
+  playerNameInput.value = savedName;
+  gwPlayerNameInput.value = savedName;
+}
+
+// --------------------------
+// Mobile/reconnect handling
+// --------------------------
 function resetSetupButtons() {
   createRoomBtn.disabled = false;
-  createRoomBtn.innerText = 'Create New Game';
+  createRoomBtn.textContent = 'Create New Imposter Game';
   joinRoomBtn.disabled = false;
-  joinRoomBtn.innerText = 'Join Game';
+  joinRoomBtn.textContent = 'Join Imposter Game';
+  gwCreateRoomBtn.disabled = false;
+  gwCreateRoomBtn.textContent = 'Create Guess Who Room';
+  gwJoinRoomBtn.disabled = false;
+  gwJoinRoomBtn.textContent = 'Join Guess Who Room';
 }
 
 function getActiveRoomCode() {
   return currentRoomCode || localStorage.getItem('imposter-roomCode') || '';
 }
 
+function getActiveGuessWhoRoomCode() {
+  return guessWhoRoomCode || localStorage.getItem('guesswho-roomCode') || '';
+}
+
 function rememberRoom(code) {
   if (!code) return;
   currentRoomCode = code;
   localStorage.setItem('imposter-roomCode', code);
-  displayRoomCode.innerText = code;
+  localStorage.setItem('party-activeGame', 'imposter');
+  displayRoomCode.textContent = code;
+}
+
+function rememberGuessWhoRoom(code) {
+  if (!code) return;
+  guessWhoRoomCode = code;
+  localStorage.setItem('guesswho-roomCode', code);
+  localStorage.setItem('party-activeGame', 'guessWho');
+  gwDisplayRoomCode.textContent = code;
+  gwSelectionRoomCode.textContent = code;
+  gwGameRoomCode.textContent = code;
 }
 
 function requestCurrentState() {
-  const activeRoom = getActiveRoomCode();
-  if (!activeRoom || intentionallyLeftRoom) return;
+  if (intentionallyLeftRoom) return;
+
+  const activeGame = localStorage.getItem('party-activeGame');
+  const now = Date.now();
+  if (now - lastStateSyncRequest < 300) return;
+  lastStateSyncRequest = now;
 
   if (!socket.connected) {
     socket.connect();
     return;
   }
 
-  // Prevent duplicate bursts from visibilitychange + focus + reconnect firing together.
-  const now = Date.now();
-  if (now - lastStateSyncRequest < 300) return;
-  lastStateSyncRequest = now;
+  if (activeGame === 'guessWho') {
+    const activeRoom = getActiveGuessWhoRoomCode();
+    if (!activeRoom) return;
+    socket.emit('gwSyncState', { roomCode: activeRoom, playerId: myPlayerId });
+    return;
+  }
 
-  socket.emit('syncState', {
-    roomCode: activeRoom,
-    playerId: myPlayerId
-  });
+  if (activeGame === 'imposter') {
+    const activeRoom = getActiveRoomCode();
+    if (!activeRoom) return;
+    socket.emit('syncState', { roomCode: activeRoom, playerId: myPlayerId });
+  }
 }
 
 function recoverFromMobileResume() {
-  const activeRoom = getActiveRoomCode();
-  if (!activeRoom || intentionallyLeftRoom) return;
+  const activeGame = localStorage.getItem('party-activeGame');
+  const hasActiveRoom = activeGame === 'guessWho' ? getActiveGuessWhoRoomCode() : getActiveRoomCode();
+  if (!hasActiveRoom || intentionallyLeftRoom) return;
 
   const timeHidden = Date.now() - lastVisibilityChange;
-
-  // A mobile browser can report the old socket as connected even though the tab was
-  // frozen. A clean reconnect forces a fresh socket id, then the server resends state.
   if (socket.connected && timeHidden > 1000) {
     socket.disconnect();
     setTimeout(() => socket.connect(), 150);
@@ -118,7 +325,6 @@ function recoverFromMobileResume() {
   setTimeout(requestCurrentState, 250);
 }
 
-// --- Socket Connection Lifecycle ---
 socket.on('connect', () => {
   intentionallyLeftRoom = false;
   requestCurrentState();
@@ -133,7 +339,6 @@ document.addEventListener('visibilitychange', () => {
     lastVisibilityChange = Date.now();
     return;
   }
-
   recoverFromMobileResume();
 });
 
@@ -145,20 +350,23 @@ window.addEventListener('focus', () => {
   setTimeout(requestCurrentState, 250);
 });
 
-// --- Buttons ---
+// --------------------------
+// Imposter Game UI and events
+// --------------------------
 createRoomBtn.addEventListener('click', () => {
   const name = playerNameInput.value.trim();
   if (!name) {
-    setupError.innerText = 'Please enter a name first.';
+    setMessage(setupError, 'Please enter a name first.');
     return;
   }
 
-  setupError.innerText = '';
+  setMessage(setupError, '');
   intentionallyLeftRoom = false;
   createRoomBtn.disabled = true;
-  createRoomBtn.innerText = 'Creating...';
+  createRoomBtn.textContent = 'Creating...';
 
-  localStorage.setItem('imposter-playerName', name);
+  saveName(name);
+  setActiveGame('imposter');
   socket.emit('createRoom', { name, playerId: myPlayerId });
 });
 
@@ -167,21 +375,22 @@ joinRoomBtn.addEventListener('click', () => {
   const code = roomCodeInput.value.trim().toUpperCase();
 
   if (!name) {
-    setupError.innerText = 'Please enter a name first.';
+    setMessage(setupError, 'Please enter a name first.');
     return;
   }
 
   if (!code) {
-    setupError.innerText = 'Please enter a room code.';
+    setMessage(setupError, 'Please enter a room code.');
     return;
   }
 
-  setupError.innerText = '';
+  setMessage(setupError, '');
   intentionallyLeftRoom = false;
   joinRoomBtn.disabled = true;
-  joinRoomBtn.innerText = 'Joining...';
+  joinRoomBtn.textContent = 'Joining...';
 
-  localStorage.setItem('imposter-playerName', name);
+  saveName(name);
+  setActiveGame('imposter');
   socket.emit('joinRoom', { roomCode: code, playerName: name, playerId: myPlayerId });
 });
 
@@ -191,11 +400,11 @@ document.getElementById('start-game-btn').addEventListener('click', () => {
   const gameMode = document.getElementById('mode-select').value;
 
   if (selectedCategories.length === 0) {
-    lobbyError.innerText = 'Please select at least one category.';
+    setMessage(lobbyError, 'Please select at least one category.');
     return;
   }
 
-  lobbyError.innerText = '';
+  setMessage(lobbyError, '');
   socket.emit('startGame', { roomCode: currentRoomCode, selectedCategories, imposterCount, gameMode });
 });
 
@@ -214,17 +423,17 @@ showContinuePanelBtn.addEventListener('click', () => {
 
   currentPlayers.forEach(player => {
     const row = document.createElement('div');
-    row.style = 'display: flex; justify-content: space-between; margin-bottom: 8px; align-items: center;';
+    row.style = 'display: flex; justify-content: space-between; margin-bottom: 8px; align-items: center; gap: 12px;';
 
     const label = document.createElement('span');
     label.style = 'font-size: 14px; color: #fff;';
-    label.innerText = `${player.name} (${player.score || 0} pts)`;
+    label.textContent = `${player.name} (${player.score || 0} pts)`;
 
     const input = document.createElement('input');
     input.type = 'number';
     input.dataset.id = player.playerId;
     input.value = '0';
-    input.style = 'width: 70px; padding: 6px; margin: 0; background: #121214; border: 1px solid #323238; color: white; border-radius: 4px;';
+    input.style = 'width: 90px; padding: 6px; margin: 0; background: #121214; border: 1px solid #323238; color: white; border-radius: 8px;';
 
     row.appendChild(label);
     row.appendChild(input);
@@ -270,30 +479,23 @@ function leaveCurrentRoom() {
   }
 
   localStorage.removeItem('imposter-roomCode');
-
-  lobbyScreen.classList.add('hidden');
-  gameScreen.classList.add('hidden');
-  setupScreen.classList.remove('hidden');
+  setActiveGame('');
 
   currentRoomCode = '';
   amIHost = false;
   resetSetupButtons();
+  showScreen('game-select-screen', false);
 }
 
 leaveLobbyBtn.addEventListener('click', leaveCurrentRoom);
 leaveGameBtn.addEventListener('click', leaveCurrentRoom);
 
-// --- UI Rendering ---
 function handleLobbyEntry(code, players) {
   rememberRoom(code);
   resetSetupButtons();
-
-  setupScreen.classList.add('hidden');
-  gameScreen.classList.add('hidden');
-  lobbyScreen.classList.remove('hidden');
+  showScreen('lobby-screen', false);
   revealBanner.classList.add('hidden');
   revealBanner.style.display = 'none';
-
   updatePlayerList(players || []);
 }
 
@@ -302,7 +504,7 @@ function appendOfflineTag(parent, isOffline) {
 
   const offline = document.createElement('span');
   offline.className = 'offline-tag';
-  offline.innerText = '(Offline)';
+  offline.textContent = '(Offline)';
   parent.appendChild(offline);
 }
 
@@ -332,14 +534,14 @@ function updatePlayerList(players = []) {
     lobbyItem.className = rowClass;
 
     const lobbyName = document.createElement('span');
-    lobbyName.innerText = `${player.name} (${player.score || 0} pts)`;
+    lobbyName.textContent = `${player.name} (${player.score || 0} pts)`;
     lobbyName.style.color = '#fff';
     appendOfflineTag(lobbyName, player.offline);
     lobbyItem.appendChild(lobbyName);
 
     if (player.isHost) {
       const hostTag = document.createElement('span');
-      hostTag.innerText = 'HOST';
+      hostTag.textContent = 'HOST';
       hostTag.className = 'host-tag';
       lobbyItem.appendChild(hostTag);
     }
@@ -351,12 +553,12 @@ function updatePlayerList(players = []) {
 
     const gameName = document.createElement('span');
     gameName.style.color = '#fff';
-    gameName.innerText = player.name;
+    gameName.textContent = player.name;
     appendOfflineTag(gameName, player.offline);
 
     const gameScore = document.createElement('span');
     gameScore.style = 'color: #00b37e; font-weight: bold;';
-    gameScore.innerText = `${player.score || 0} pts`;
+    gameScore.textContent = `${player.score || 0} pts`;
 
     gameItem.appendChild(gameName);
     gameItem.appendChild(gameScore);
@@ -368,50 +570,47 @@ function displayActiveGameData(data) {
   if (data.roomCode) rememberRoom(data.roomCode);
   if (data.players) updatePlayerList(data.players);
 
-  // Sync the host's "Continue Game" checkboxes with the current server options.
   if (data.selectedCategories && amIHost) {
     document.querySelectorAll('#continue-categories input[type="checkbox"]').forEach(cb => {
       cb.checked = data.selectedCategories.includes(cb.value);
     });
   }
 
-  lobbyScreen.classList.add('hidden');
-  setupScreen.classList.add('hidden');
-  gameScreen.classList.remove('hidden');
+  showScreen('game-screen', false);
   continuePanel.classList.add('hidden');
 
-  gameCategoryReveal.innerText = data.category;
+  gameCategoryReveal.textContent = data.category;
   currentGameMode = data.mode;
 
   gameHostControls.classList.add('hidden');
   revealImposterBtn.classList.add('hidden');
 
   if (data.mode === 'hidden') {
-    document.getElementById('role-title').innerText = 'Your Secret Word';
+    document.getElementById('role-title').textContent = 'Your Secret Word';
     roleDisplayCard.style.display = 'none';
-    roleDisplayCard.innerText = '';
+    roleDisplayCard.textContent = '';
     roleDisplayCard.className = 'hidden';
 
     wordDisplayArea.classList.remove('hidden');
-    gameWordReveal.innerText = data.word;
-    gameInstructions.innerText = 'Everyone has a word! One person has a DIFFERENT word. Describe yours carefully!';
+    gameWordReveal.textContent = data.word;
+    gameInstructions.textContent = 'Everyone has a word! One person has a DIFFERENT word. Describe yours carefully!';
   } else {
-    document.getElementById('role-title').innerText = 'Your Role Assignment';
+    document.getElementById('role-title').textContent = 'Your Role Assignment';
     roleDisplayCard.style.display = 'block';
     roleDisplayCard.classList.remove('hidden');
 
     if (data.role === 'Imposter') {
-      roleDisplayCard.innerText = 'YOU ARE THE IMPOSTER!';
+      roleDisplayCard.textContent = 'YOU ARE THE IMPOSTER!';
       roleDisplayCard.className = 'role-box role-imposter';
       wordDisplayArea.classList.add('hidden');
     } else {
-      roleDisplayCard.innerText = 'YOU ARE CREWMATE';
+      roleDisplayCard.textContent = 'YOU ARE CREWMATE';
       roleDisplayCard.className = 'role-box role-crewmate';
       wordDisplayArea.classList.remove('hidden');
-      gameWordReveal.innerText = data.word;
+      gameWordReveal.textContent = data.word;
     }
 
-    gameInstructions.innerText = 'Discuss and find the Imposter!';
+    gameInstructions.textContent = 'Discuss and find the Imposter!';
   }
 
   if (data.imposterRevealed) {
@@ -421,7 +620,7 @@ function displayActiveGameData(data) {
     revealBanner.style.display = 'none';
 
     if (amIHost) {
-      revealImposterBtn.innerText = data.mode === 'hidden' ? 'End Round & Reveal (Host Only)' : 'End Round (Host Only)';
+      revealImposterBtn.textContent = data.mode === 'hidden' ? 'End Round & Reveal (Host Only)' : 'End Round (Host Only)';
       revealImposterBtn.classList.remove('hidden');
     }
   }
@@ -433,9 +632,9 @@ function showImposterReveal(imposterNames) {
 
   const myName = playerNameInput.value.trim() || localStorage.getItem('imposter-playerName');
   if (myName && imposterNames && imposterNames.includes(myName)) {
-    revealedImposterName.innerText = `${imposterNames} (That's YOU!)`;
+    revealedImposterName.textContent = `${imposterNames} (That's YOU!)`;
   } else {
-    revealedImposterName.innerText = imposterNames || '-';
+    revealedImposterName.textContent = imposterNames || '-';
   }
 
   revealImposterBtn.classList.add('hidden');
@@ -444,15 +643,12 @@ function showImposterReveal(imposterNames) {
   }
 }
 
-// --- Socket Listeners ---
 socket.on('rejoinFailed', () => {
   localStorage.removeItem('imposter-roomCode');
   currentRoomCode = '';
-  setupScreen.classList.remove('hidden');
-  lobbyScreen.classList.add('hidden');
-  gameScreen.classList.add('hidden');
-  setupError.innerText = 'Could not rejoin the previous room. It may have expired.';
   resetSetupButtons();
+  showScreen('setup-screen', false);
+  setMessage(setupError, 'Could not rejoin the previous room. It may have expired.');
 });
 
 socket.on('rejoinGame', displayActiveGameData);
@@ -473,8 +669,8 @@ socket.on('roomUpdated', data => {
 });
 
 socket.on('errorMsg', msg => {
-  setupError.innerText = msg;
-  lobbyError.innerText = msg;
+  setMessage(setupError, msg);
+  setMessage(lobbyError, msg);
   resetSetupButtons();
 });
 
@@ -483,3 +679,749 @@ socket.on('imposterRevealed', showImposterReveal);
 socket.on('gameReset', ({ roomCode, players }) => {
   handleLobbyEntry(roomCode || currentRoomCode, players);
 });
+
+
+function clampNumber(value, min, max) {
+  const parsed = parseInt(value, 10);
+  if (!Number.isInteger(parsed)) return min;
+  return Math.max(min, Math.min(parsed, max));
+}
+
+function estimateGuessWhoBoardCapacity() {
+  const viewportWidth = Math.max(320, window.innerWidth || document.documentElement.clientWidth || 390);
+  const viewportHeight = Math.max(520, window.innerHeight || document.documentElement.clientHeight || 720);
+  const isMobile = viewportWidth < 760;
+
+  const boardWidth = isMobile
+    ? viewportWidth - 28
+    : Math.min(viewportWidth - 420, 1060);
+
+  const cardWidth = isMobile ? 74 : 104;
+  const cardHeight = isMobile ? 98 : 124;
+  const gap = isMobile ? 6 : 10;
+  const reservedHeight = isMobile ? 265 : 210;
+
+  const columns = Math.max(isMobile ? 3 : 5, Math.floor((boardWidth + gap) / (cardWidth + gap)));
+  const rows = Math.max(3, Math.floor((viewportHeight - reservedHeight) / (cardHeight + gap)));
+
+  return clampNumber(columns * rows, 6, 60);
+}
+
+function updateGuessWhoAutoFitNote() {
+  const estimate = estimateGuessWhoBoardCapacity();
+  if (gwAutoFitNote) {
+    gwAutoFitNote.textContent = `Auto-fit estimate for this device: about ${estimate} characters. The server uses the smaller estimate between both players.`;
+  }
+}
+
+function sendGuessWhoViewportInfo() {
+  const activeRoom = getActiveGuessWhoRoomCode();
+  if (!activeRoom || !socket.connected) return;
+
+  socket.emit('gwUpdateViewport', {
+    roomCode: activeRoom,
+    playerId: myPlayerId,
+    boardCapacity: estimateGuessWhoBoardCapacity()
+  });
+
+  updateGuessWhoAutoFitNote();
+}
+
+window.addEventListener('resize', () => {
+  clearTimeout(viewportUpdateTimer);
+  viewportUpdateTimer = setTimeout(sendGuessWhoViewportInfo, 250);
+});
+
+// --------------------------
+// Guess Who library/admin
+// --------------------------
+async function getGuessWhoCharacters() {
+  const response = await fetch('/api/guess-who/characters');
+  if (!response.ok) throw new Error('Could not load Guess Who characters.');
+  const data = await response.json();
+  return Array.isArray(data.characters) ? data.characters : [];
+}
+
+async function refreshGuessWhoLibraryCount() {
+  try {
+    guessWhoLibrary = await getGuessWhoCharacters();
+    guessWhoLibraryCount = guessWhoLibrary.length;
+    gwLibraryCount.textContent = `${guessWhoLibraryCount} saved Guess Who characters available.`;
+    gwLibraryCountLobby.textContent = `Library count: ${guessWhoLibraryCount}`;
+    renderGuessWhoCharacterPicker();
+    updateGuessWhoAutoFitNote();
+    return guessWhoLibraryCount;
+  } catch (error) {
+    gwLibraryCount.textContent = 'Could not load character library.';
+    gwLibraryCountLobby.textContent = 'Library count: unavailable';
+    return 0;
+  }
+}
+
+async function loadAdminLibrary() {
+  setMessage(adminError, '');
+  setMessage(adminStatus, '');
+
+  try {
+    guessWhoLibrary = await getGuessWhoCharacters();
+    adminLibraryCount.textContent = `${guessWhoLibrary.length}`;
+    adminLibraryGrid.innerHTML = '';
+
+    if (guessWhoLibrary.length === 0) {
+      const empty = createElement('p', 'small-note', 'No characters uploaded yet. Upload images above to build your library.');
+      adminLibraryGrid.appendChild(empty);
+      return;
+    }
+
+    guessWhoLibrary.forEach(character => {
+      const card = createElement('div', 'admin-card');
+      const img = document.createElement('img');
+      img.src = character.imageUrl;
+      img.alt = character.name;
+      img.loading = 'lazy';
+
+      const name = createElement('div', 'name', character.name);
+      name.dir = 'auto';
+      const deleteBtn = createElement('button', 'danger-btn', 'Delete');
+      deleteBtn.addEventListener('click', () => deleteAdminCharacter(character.id, character.name));
+
+      card.appendChild(img);
+      card.appendChild(name);
+      card.appendChild(deleteBtn);
+      adminLibraryGrid.appendChild(card);
+    });
+  } catch (error) {
+    setMessage(adminError, error.message || 'Could not load admin library.');
+  }
+}
+
+async function uploadAdminImages(files) {
+  const password = adminPasswordInput.value;
+  if (!password) {
+    setMessage(adminError, 'Enter the admin upload password first.');
+    return;
+  }
+
+  if (!files || files.length === 0) {
+    setMessage(adminError, 'Choose images or a folder first.');
+    return;
+  }
+
+  const formData = new FormData();
+  Array.from(files).forEach(file => {
+    formData.append('images', file, file.name);
+  });
+
+  adminUploadBtn.disabled = true;
+  adminUploadBtn.textContent = 'Uploading...';
+  setMessage(adminError, '');
+  setMessage(adminStatus, '');
+
+  try {
+    const response = await fetch('/api/admin/guess-who/upload', {
+      method: 'POST',
+      headers: { 'x-admin-password': password },
+      body: formData
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || 'Upload failed.');
+
+    setMessage(adminStatus, `Uploaded ${data.added?.length || 0} character image(s).`);
+    adminFileInput.value = '';
+    adminFolderInput.value = '';
+    await loadAdminLibrary();
+    await refreshGuessWhoLibraryCount();
+  } catch (error) {
+    setMessage(adminError, error.message || 'Upload failed.');
+  } finally {
+    adminUploadBtn.disabled = false;
+    adminUploadBtn.textContent = 'Upload Selected Images';
+  }
+}
+
+async function deleteAdminCharacter(id, name) {
+  const password = adminPasswordInput.value;
+  if (!password) {
+    setMessage(adminError, 'Enter the admin upload password first.');
+    return;
+  }
+
+  if (!confirm(`Delete ${name}?`)) return;
+
+  try {
+    const response = await fetch(`/api/admin/guess-who/characters/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { 'x-admin-password': password }
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || 'Delete failed.');
+
+    setMessage(adminStatus, `Deleted ${name}.`);
+    await loadAdminLibrary();
+    await refreshGuessWhoLibraryCount();
+  } catch (error) {
+    setMessage(adminError, error.message || 'Delete failed.');
+  }
+}
+
+adminUploadBtn.addEventListener('click', () => {
+  const files = [...Array.from(adminFileInput.files), ...Array.from(adminFolderInput.files)];
+  uploadAdminImages(files);
+});
+
+// --------------------------
+// Guess Who UI and events
+// --------------------------
+gwCreateRoomBtn.addEventListener('click', () => {
+  const name = gwPlayerNameInput.value.trim();
+  if (!name) {
+    setMessage(gwSetupError, 'Please enter a name first.');
+    return;
+  }
+
+  saveName(name);
+  setActiveGame('guessWho');
+  intentionallyLeftRoom = false;
+  gwCreateRoomBtn.disabled = true;
+  gwCreateRoomBtn.textContent = 'Creating...';
+  setMessage(gwSetupError, '');
+  socket.emit('gwCreateRoom', { name, playerId: myPlayerId, boardCapacity: estimateGuessWhoBoardCapacity() });
+});
+
+gwJoinRoomBtn.addEventListener('click', () => {
+  const name = gwPlayerNameInput.value.trim();
+  const code = gwRoomCodeInput.value.trim().toUpperCase();
+
+  if (!name) {
+    setMessage(gwSetupError, 'Please enter a name first.');
+    return;
+  }
+
+  if (!code) {
+    setMessage(gwSetupError, 'Please enter a room code.');
+    return;
+  }
+
+  saveName(name);
+  setActiveGame('guessWho');
+  intentionallyLeftRoom = false;
+  gwJoinRoomBtn.disabled = true;
+  gwJoinRoomBtn.textContent = 'Joining...';
+  setMessage(gwSetupError, '');
+  socket.emit('gwJoinRoom', { roomCode: code, playerName: name, playerId: myPlayerId, boardCapacity: estimateGuessWhoBoardCapacity() });
+});
+
+function getGuessWhoRoundOptions() {
+  const selectionMode = gwBoardSourceSelect.value === 'selected' ? 'selected' : 'random';
+
+  if (selectionMode === 'selected') {
+    const selectedCharacterIds = [...guessWhoManualSelected];
+    if (selectedCharacterIds.length < 6) {
+      setMessage(gwLobbyError, 'Select at least 6 characters, or switch back to randomize.');
+      return null;
+    }
+
+    if (selectedCharacterIds.length > 60) {
+      setMessage(gwLobbyError, 'Select 60 characters or fewer.');
+      return null;
+    }
+
+    return { selectionMode, selectedCharacterIds };
+  }
+
+  return {
+    selectionMode: 'random',
+    autoFit: Boolean(gwAutoFitCheckbox.checked),
+    boardSize: gwBoardSizeInput.value
+  };
+}
+
+gwStartRoundBtn.addEventListener('click', () => {
+  setMessage(gwLobbyError, '');
+  sendGuessWhoViewportInfo();
+
+  const options = getGuessWhoRoundOptions();
+  if (!options) return;
+
+  socket.emit('gwStartSelection', {
+    roomCode: guessWhoRoomCode,
+    ...options
+  });
+});
+
+gwResetScoresBtn.addEventListener('click', () => {
+  if (confirm('Reset Guess Who scores to zero?')) {
+    socket.emit('gwResetScores', guessWhoRoomCode);
+  }
+});
+
+gwConfirmSecretBtn.addEventListener('click', () => {
+  if (!guessWhoSelectedCharacterId) return;
+  socket.emit('gwSelectCharacter', {
+    roomCode: guessWhoRoomCode,
+    characterId: guessWhoSelectedCharacterId
+  });
+});
+
+gwChatForm.addEventListener('submit', event => {
+  event.preventDefault();
+  const text = gwChatInput.value.trim();
+  if (!text) return;
+
+  socket.emit('gwChatMessage', { roomCode: guessWhoRoomCode, text });
+  gwChatInput.value = '';
+});
+
+gwRevealBtn.addEventListener('click', () => {
+  socket.emit('gwRevealCharacters', guessWhoRoomCode);
+});
+
+gwNextRoundBtn.addEventListener('click', () => {
+  sendGuessWhoViewportInfo();
+  socket.emit('gwNextRound', {
+    roomCode: guessWhoRoomCode,
+    pointsData: collectGuessWhoPoints(),
+    boardSize: gwNextBoardSize.value,
+    autoFit: Boolean(gwNextAutoFit.checked)
+  });
+});
+
+gwReturnLobbyBtn.addEventListener('click', () => {
+  socket.emit('gwReturnToLobby', {
+    roomCode: guessWhoRoomCode,
+    pointsData: collectGuessWhoPoints()
+  });
+});
+
+function leaveGuessWhoRoom() {
+  intentionallyLeftRoom = true;
+
+  if (guessWhoRoomCode) {
+    socket.emit('gwLeaveRoom', guessWhoRoomCode);
+  }
+
+  localStorage.removeItem('guesswho-roomCode');
+  setActiveGame('');
+  guessWhoRoomCode = '';
+  guessWhoPlayers = [];
+  guessWhoBoard = [];
+  guessWhoMessages = [];
+  guessWhoEliminated = new Set();
+  guessWhoMySecret = null;
+  resetSetupButtons();
+  showScreen('game-select-screen', false);
+}
+
+gwLeaveLobbyBtn.addEventListener('click', leaveGuessWhoRoom);
+gwLeaveSelectionBtn.addEventListener('click', leaveGuessWhoRoom);
+gwLeaveGameBtn.addEventListener('click', leaveGuessWhoRoom);
+
+function collectGuessWhoPoints() {
+  const points = {};
+  gwPointInputs.querySelectorAll('input[type="number"]').forEach(input => {
+    points[input.dataset.id] = parseInt(input.value, 10) || 0;
+  });
+  return points;
+}
+
+function guessWhoEliminatedKey() {
+  return `gw-eliminated-${guessWhoRoomCode}-${guessWhoRoundId}-${myPlayerId}`;
+}
+
+function loadGuessWhoEliminated() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(guessWhoEliminatedKey()) || '[]');
+    guessWhoEliminated = new Set(Array.isArray(saved) ? saved : []);
+  } catch (error) {
+    guessWhoEliminated = new Set();
+  }
+}
+
+function saveGuessWhoEliminated() {
+  localStorage.setItem(guessWhoEliminatedKey(), JSON.stringify([...guessWhoEliminated]));
+}
+
+
+function updateGuessWhoBoardSourceUI() {
+  const manual = gwBoardSourceSelect.value === 'selected';
+  gwManualOptions.classList.toggle('hidden', !manual);
+  gwRandomOptions.classList.toggle('hidden', manual);
+  renderGuessWhoCharacterPicker();
+}
+
+function getFilteredGuessWhoLibrary() {
+  const query = guessWhoLibraryFilter.trim().toLowerCase();
+  if (!query) return guessWhoLibrary;
+
+  return guessWhoLibrary.filter(character => character.name.toLowerCase().includes(query));
+}
+
+function renderGuessWhoCharacterPicker() {
+  if (!gwCharacterPicker) return;
+
+  const filtered = getFilteredGuessWhoLibrary();
+  gwCharacterPicker.innerHTML = '';
+  gwSelectedCount.textContent = `${guessWhoManualSelected.size} selected`;
+
+  if (guessWhoLibrary.length === 0) {
+    gwCharacterPicker.appendChild(createElement('p', 'small-note', 'No saved characters yet. Upload characters from the admin page first.'));
+    return;
+  }
+
+  if (filtered.length === 0) {
+    gwCharacterPicker.appendChild(createElement('p', 'small-note', 'No characters match this search.'));
+    return;
+  }
+
+  filtered.forEach(character => {
+    const card = createElement('button', 'picker-card');
+    card.type = 'button';
+    card.dataset.id = character.id;
+    if (guessWhoManualSelected.has(character.id)) card.classList.add('selected');
+
+    const img = document.createElement('img');
+    img.src = character.imageUrl;
+    img.alt = character.name;
+    img.loading = 'lazy';
+
+    const name = createElement('div', 'name', character.name);
+    name.dir = 'auto';
+
+    card.appendChild(img);
+    card.appendChild(name);
+    card.addEventListener('click', () => {
+      if (guessWhoManualSelected.has(character.id)) {
+        guessWhoManualSelected.delete(character.id);
+      } else {
+        guessWhoManualSelected.add(character.id);
+      }
+      renderGuessWhoCharacterPicker();
+    });
+
+    gwCharacterPicker.appendChild(card);
+  });
+}
+
+if (gwBoardSourceSelect) gwBoardSourceSelect.addEventListener('change', updateGuessWhoBoardSourceUI);
+if (gwCharacterSearch) gwCharacterSearch.addEventListener('input', () => {
+  guessWhoLibraryFilter = gwCharacterSearch.value;
+  renderGuessWhoCharacterPicker();
+});
+if (gwSelectVisibleBtn) gwSelectVisibleBtn.addEventListener('click', () => {
+  getFilteredGuessWhoLibrary().forEach(character => guessWhoManualSelected.add(character.id));
+  renderGuessWhoCharacterPicker();
+});
+if (gwClearSelectionBtn) gwClearSelectionBtn.addEventListener('click', () => {
+  guessWhoManualSelected.clear();
+  renderGuessWhoCharacterPicker();
+});
+if (gwAutoFitCheckbox) gwAutoFitCheckbox.addEventListener('change', () => {
+  gwBoardSizeInput.disabled = gwAutoFitCheckbox.checked;
+});
+if (gwNextAutoFit) gwNextAutoFit.addEventListener('change', () => {
+  gwNextBoardSize.disabled = gwNextAutoFit.checked;
+});
+
+function renderGuessWhoPlayers() {
+  const lists = [gwPlayerList, gwGamePlayerList];
+  lists.forEach(list => { list.innerHTML = ''; });
+
+  guessWhoPlayers.forEach(player => {
+    lists.forEach(list => {
+      const item = document.createElement('li');
+      if (player.offline) item.className = 'offline-player';
+
+      const left = document.createElement('span');
+      left.textContent = `${player.name} (${player.score || 0} pts)`;
+      appendOfflineTag(left, player.offline);
+      item.appendChild(left);
+
+      const badges = document.createElement('span');
+      badges.style.display = 'flex';
+      badges.style.gap = '6px';
+      badges.style.alignItems = 'center';
+
+      if (player.isHost) badges.appendChild(createElement('span', 'pill', 'HOST'));
+      if (player.hasSelected && guessWhoStatus !== 'lobby') badges.appendChild(createElement('span', 'pill green', 'PICKED'));
+
+      item.appendChild(badges);
+      list.appendChild(item);
+    });
+  });
+
+  const me = guessWhoPlayers.find(player => player.playerId === myPlayerId);
+  const isHost = Boolean(me?.isHost);
+  gwHostControls.classList.toggle('hidden', !isHost || guessWhoStatus !== 'lobby');
+  gwRevealBtn.classList.toggle('hidden', !isHost || guessWhoStatus !== 'playing');
+  gwPointsPanel.classList.toggle('hidden', !isHost);
+
+  if (guessWhoPlayers.length < 2) {
+    gwLobbyStatus.textContent = 'Waiting for the second player...';
+  } else {
+    gwLobbyStatus.textContent = isHost ? 'Both players are here. Start character selection.' : 'Waiting for the host to start.';
+  }
+}
+
+function createCharacterCard(character, options = {}) {
+  const card = createElement('button', 'character-card');
+  card.type = 'button';
+  card.dataset.id = character.id;
+
+  if (options.selected) card.classList.add('selected');
+  if (options.eliminated) card.classList.add('eliminated');
+
+  const img = document.createElement('img');
+  img.src = character.imageUrl;
+  img.alt = character.name;
+  img.loading = 'lazy';
+
+  const name = createElement('div', 'name', character.name);
+  name.dir = 'auto';
+  card.appendChild(img);
+  card.appendChild(name);
+  return card;
+}
+
+function renderGuessWhoSelection() {
+  gwSelectionGrid.innerHTML = '';
+  gwConfirmSecretBtn.disabled = !guessWhoSelectedCharacterId;
+
+  if (guessWhoMySecret) {
+    gwSelectionHelp.textContent = 'You picked your secret character. Waiting for the other player.';
+    gwSelectedSecretPreview.classList.remove('hidden');
+    gwSelectedSecretPreview.innerHTML = '';
+    gwSelectedSecretPreview.appendChild(renderSecretCardContent(guessWhoMySecret, 'Your secret character'));
+    gwConfirmSecretBtn.disabled = true;
+  } else {
+    gwSelectionHelp.textContent = 'Choose one character. The other player will not see your choice.';
+    gwSelectedSecretPreview.classList.add('hidden');
+  }
+
+  guessWhoBoard.forEach(character => {
+    const card = createCharacterCard(character, {
+      selected: character.id === guessWhoSelectedCharacterId || character.id === guessWhoMySecret?.id
+    });
+
+    card.disabled = Boolean(guessWhoMySecret);
+    card.addEventListener('click', () => {
+      if (guessWhoMySecret) return;
+      guessWhoSelectedCharacterId = character.id;
+      renderGuessWhoSelection();
+    });
+
+    gwSelectionGrid.appendChild(card);
+  });
+}
+
+function renderSecretCardContent(character, labelText) {
+  const wrapper = createElement('div', 'secret-card');
+  const img = document.createElement('img');
+  img.src = character.imageUrl;
+  img.alt = character.name;
+
+  const text = document.createElement('div');
+  const label = createElement('div', 'small-note', labelText);
+  const name = createElement('h3', '', character.name);
+  name.dir = 'auto';
+  name.style.margin = '3px 0 0 0';
+  text.appendChild(label);
+  text.appendChild(name);
+
+  wrapper.appendChild(img);
+  wrapper.appendChild(text);
+  return wrapper;
+}
+
+function renderGuessWhoBoard() {
+  gwBoardGrid.innerHTML = '';
+
+  if (guessWhoMySecret) {
+    gwMySecret.classList.remove('hidden');
+    gwMySecret.innerHTML = '';
+    gwMySecret.appendChild(renderSecretCardContent(guessWhoMySecret, 'Your secret character'));
+  } else {
+    gwMySecret.classList.add('hidden');
+  }
+
+  guessWhoBoard.forEach(character => {
+    const card = createCharacterCard(character, {
+      eliminated: guessWhoEliminated.has(character.id)
+    });
+
+    card.addEventListener('click', () => {
+      if (guessWhoEliminated.has(character.id)) {
+        guessWhoEliminated.delete(character.id);
+      } else {
+        guessWhoEliminated.add(character.id);
+      }
+      saveGuessWhoEliminated();
+      renderGuessWhoBoard();
+    });
+
+    gwBoardGrid.appendChild(card);
+  });
+}
+
+function renderGuessWhoMessages() {
+  gwChatBox.innerHTML = '';
+
+  guessWhoMessages.forEach(message => {
+    const item = createElement('div', message.system ? 'chat-message system' : 'chat-message');
+
+    if (message.system) {
+      item.textContent = message.text;
+    } else {
+      const name = createElement('span', 'name', `${message.name}: `);
+      const body = createElement('span', '', message.text);
+      body.dir = 'auto';
+      const time = createElement('span', 'small-note', ` ${getTimeLabel(message.timestamp)}`);
+      item.appendChild(name);
+      item.appendChild(body);
+      item.appendChild(time);
+    }
+
+    gwChatBox.appendChild(item);
+  });
+
+  gwChatBox.scrollTop = gwChatBox.scrollHeight;
+}
+
+function renderGuessWhoReveal() {
+  const isRevealed = guessWhoStatus === 'revealed';
+  gwRevealedPanel.classList.toggle('hidden', !isRevealed);
+  gwRevealGrid.innerHTML = '';
+
+  if (!isRevealed) return;
+
+  guessWhoRevealedSecrets.forEach(secret => {
+    const panel = createElement('div', 'panel');
+    if (secret.character) {
+      panel.appendChild(renderSecretCardContent(secret.character, `${secret.name}'s character`));
+    } else {
+      panel.appendChild(createElement('p', 'small-note', `${secret.name} did not choose a character.`));
+    }
+    gwRevealGrid.appendChild(panel);
+  });
+
+  renderGuessWhoPointInputs();
+}
+
+function renderGuessWhoPointInputs() {
+  gwPointInputs.innerHTML = '';
+  guessWhoPlayers.forEach(player => {
+    const row = document.createElement('div');
+    row.style = 'display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px;';
+
+    const label = createElement('span', '', `${player.name} (${player.score || 0} pts)`);
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.value = '0';
+    input.dataset.id = player.playerId;
+    input.style.width = '92px';
+    input.style.margin = '0';
+
+    row.appendChild(label);
+    row.appendChild(input);
+    gwPointInputs.appendChild(row);
+  });
+}
+
+function handleGuessWhoState(state) {
+  rememberGuessWhoRoom(state.roomCode);
+  resetSetupButtons();
+
+  const oldRoundId = guessWhoRoundId;
+  guessWhoPlayers = state.players || [];
+  guessWhoBoard = state.board || [];
+  guessWhoMessages = state.messages || [];
+  guessWhoStatus = state.status || 'lobby';
+  guessWhoRoundId = state.roundId || 0;
+  guessWhoMySecret = state.mySecret || null;
+  guessWhoRevealedSecrets = state.revealedSecrets || [];
+
+  if (oldRoundId !== guessWhoRoundId) {
+    guessWhoSelectedCharacterId = '';
+    loadGuessWhoEliminated();
+  }
+
+  renderGuessWhoPlayers();
+  setMessage(gwSetupError, '');
+  setMessage(gwLobbyError, '');
+  setMessage(gwSelectionError, '');
+  setMessage(gwGameError, '');
+
+  if (guessWhoStatus === 'lobby') {
+    showScreen('gw-lobby-screen', true);
+    refreshGuessWhoLibraryCount();
+    updateGuessWhoBoardSourceUI();
+    return;
+  }
+
+  if (guessWhoStatus === 'selecting') {
+    showScreen('gw-selection-screen', true);
+    renderGuessWhoSelection();
+    return;
+  }
+
+  showScreen('gw-game-screen', true);
+  renderGuessWhoBoard();
+  renderGuessWhoMessages();
+  renderGuessWhoReveal();
+  renderGuessWhoPlayers();
+}
+
+socket.on('gwState', handleGuessWhoState);
+
+socket.on('gwChatMessage', message => {
+  if (!guessWhoMessages.some(existing => existing.id === message.id)) {
+    guessWhoMessages.push(message);
+    guessWhoMessages = guessWhoMessages.slice(-100);
+    renderGuessWhoMessages();
+  }
+});
+
+socket.on('gwErrorMsg', message => {
+  setMessage(gwSetupError, message);
+  setMessage(gwLobbyError, message);
+  setMessage(gwSelectionError, message);
+  setMessage(gwGameError, message);
+  resetSetupButtons();
+});
+
+socket.on('gwRejoinFailed', () => {
+  localStorage.removeItem('guesswho-roomCode');
+  guessWhoRoomCode = '';
+  resetSetupButtons();
+  showScreen('gw-setup-screen', false);
+  setMessage(gwSetupError, 'Could not rejoin the previous Guess Who room. It may have expired.');
+});
+
+// --------------------------
+// Initial view
+// --------------------------
+updateGuessWhoBoardSourceUI();
+updateGuessWhoAutoFitNote();
+if (gwAutoFitCheckbox) gwBoardSizeInput.disabled = gwAutoFitCheckbox.checked;
+if (gwNextAutoFit) gwNextBoardSize.disabled = gwNextAutoFit.checked;
+
+(function init() {
+  const activeGame = localStorage.getItem('party-activeGame');
+  const hasImposterRoom = localStorage.getItem('imposter-roomCode');
+  const hasGuessWhoRoom = localStorage.getItem('guesswho-roomCode');
+
+  if (activeGame === 'imposter' && hasImposterRoom) {
+    showScreen('setup-screen', false);
+    requestCurrentState();
+    return;
+  }
+
+  if (activeGame === 'guessWho' && hasGuessWhoRoom) {
+    showScreen('gw-setup-screen', false);
+    requestCurrentState();
+    return;
+  }
+
+  showGameSelect();
+})();
