@@ -41,6 +41,10 @@
       text-align: center;
     }
     .narrow { max-width: 520px; }
+    .guesswho-play-layout {
+      max-width: min(1500px, calc(100vw - 12px));
+      padding: clamp(8px, 1.4vw, 22px);
+    }
     .hidden { display: none !important; }
     h1, h2, h3 { color: #ffffff; margin-top: 0; }
     p { color: var(--muted); line-height: 1.5; }
@@ -136,6 +140,12 @@
     .checkbox-group input[type="checkbox"] { width: 18px; height: 18px; margin: 0 10px 0 0; cursor: pointer; flex-shrink: 0; }
     .split-layout { display: grid; gap: 18px; grid-template-columns: 1fr; align-items: start; }
     @media (min-width: 900px) { .split-layout { grid-template-columns: 1.35fr 0.8fr; } }
+    .guesswho-play-layout .split-layout { gap: clamp(8px, 1vw, 14px); }
+    @media (min-width: 900px) {
+      .guesswho-play-layout .split-layout {
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+      }
+    }
     .panel {
       background: #18181c;
       border: 1px solid var(--panel-2);
@@ -152,6 +162,14 @@
       gap: 12px;
       margin-top: 14px;
     }
+    .guesswho-play-layout .panel { padding: clamp(8px, 1vw, 14px); }
+    .guesswho-play-layout .top-bar { margin-bottom: 10px; }
+    .guesswho-play-layout h2, .guesswho-play-layout h3 { margin-bottom: 8px; }
+    .guesswho-play-layout .character-grid {
+      grid-template-columns: repeat(auto-fit, minmax(clamp(64px, 7vw, 98px), 1fr));
+      gap: clamp(5px, 0.8vw, 10px);
+      margin-top: 8px;
+    }
     .character-card {
       margin: 0;
       padding: 0;
@@ -164,6 +182,7 @@
       text-align: center;
       min-height: 150px;
     }
+    .guesswho-play-layout .character-card { min-height: 0; border-radius: 10px; }
     .character-card:hover { transform: translateY(-2px); border-color: var(--purple); }
     .character-card.selected { border-color: var(--green); box-shadow: 0 0 0 2px rgba(0,179,126,0.2); }
     .character-card.eliminated { opacity: 0.28; filter: grayscale(1); }
@@ -174,10 +193,28 @@
       display: block;
       background: var(--panel-2);
     }
-    .character-card .name { padding: 8px; font-weight: 800; font-size: 13px; color: #fff; min-height: 44px; display: flex; align-items: center; justify-content: center; }
+    .character-card .name {
+      padding: 8px;
+      font-weight: 800;
+      font-size: 13px;
+      color: #fff;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1.2;
+      unicode-bidi: plaintext;
+    }
+    .guesswho-play-layout .character-card .name {
+      min-height: 30px;
+      padding: 4px 5px;
+      font-size: clamp(10px, 0.9vw, 12px);
+      line-height: 1.12;
+    }
     .secret-card { display: flex; gap: 12px; align-items: center; background: var(--bg); border-radius: 12px; padding: 10px; border: 1px solid var(--panel-2); }
     .secret-card img { width: 74px; height: 74px; border-radius: 10px; object-fit: cover; background: var(--panel-2); }
     .chat-box { height: 240px; overflow-y: auto; background: var(--bg); border: 1px solid var(--panel-2); border-radius: 12px; padding: 10px; margin: 10px 0; }
+    .guesswho-play-layout .chat-box { height: clamp(140px, 30vh, 230px); }
     .chat-message { margin-bottom: 10px; font-size: 14px; line-height: 1.35; }
     .chat-message .name { color: var(--green); font-weight: 900; }
     .chat-message.system { color: var(--yellow); font-style: italic; }
@@ -186,11 +223,52 @@
     .chat-form button { width: 92px; margin: 0; }
     .reveal-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
     @media (min-width: 680px) { .reveal-grid { grid-template-columns: 1fr 1fr; } }
+    .picker-tools { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 8px; }
+    @media (min-width: 720px) { .picker-tools { grid-template-columns: 1fr auto auto; align-items: center; } }
+    .picker-tools input { margin: 0; }
+    .picker-tools button { margin: 0; width: auto; min-width: 120px; }
+    .character-picker-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+      gap: 10px;
+      max-height: 360px;
+      overflow-y: auto;
+      background: var(--bg);
+      border: 1px solid var(--panel-2);
+      border-radius: 12px;
+      padding: 10px;
+      margin-top: 10px;
+    }
+    .picker-card {
+      margin: 0;
+      padding: 0;
+      background: #18181c;
+      border: 2px solid var(--panel-2);
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      text-align: center;
+    }
+    .picker-card.selected { border-color: var(--green); box-shadow: 0 0 0 2px rgba(0,179,126,0.22); }
+    .picker-card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--panel-2); }
+    .picker-card .name { padding: 6px; font-weight: 800; font-size: 12px; min-height: 38px; display: flex; align-items: center; justify-content: center; unicode-bidi: plaintext; }
+    .inline-checkbox { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--text); }
+    .inline-checkbox input { width: auto; margin: 0; }
     .admin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-top: 14px; }
     .admin-card { background: var(--bg); border: 1px solid var(--panel-2); border-radius: 12px; overflow: hidden; text-align: center; }
     .admin-card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--panel-2); }
-    .admin-card .name { padding: 8px; font-weight: 800; font-size: 13px; min-height: 44px; }
+    .admin-card .name { padding: 8px; font-weight: 800; font-size: 13px; min-height: 44px; unicode-bidi: plaintext; }
     .admin-card button { border-radius: 0; margin: 0; font-size: 13px; padding: 8px; }
+    @media (max-width: 760px) {
+      body { padding: 6px; }
+      .app-card { padding: 18px; }
+      .guesswho-play-layout { border-radius: 12px; }
+      .guesswho-play-layout .panel { padding: 8px; }
+      .guesswho-play-layout .character-grid { grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); gap: 6px; }
+      .guesswho-play-layout .small-note { font-size: 12px; margin: 3px 0; }
+      .guesswho-play-layout .secret-card { padding: 6px; gap: 8px; }
+      .guesswho-play-layout .secret-card img { width: 54px; height: 54px; }
+    }
     .small-note { font-size: 13px; color: var(--muted); margin: 6px 0; }
     @keyframes pop { 0% { transform: scale(0.96); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
   </style>
@@ -347,8 +425,30 @@
         </div>
         <div id="gw-host-controls" class="panel hidden">
           <h3>Host Controls</h3>
-          <label for="gw-board-size">Characters on board</label>
-          <input type="number" id="gw-board-size" min="6" max="60" value="24">
+          <label for="gw-board-source">Board source</label>
+          <select id="gw-board-source">
+            <option value="random">Randomize from saved library</option>
+            <option value="selected">Select characters manually</option>
+          </select>
+
+          <div id="gw-random-options">
+            <label class="inline-checkbox"><input type="checkbox" id="gw-auto-fit" checked> Auto-fit board to both players' screens</label>
+            <label for="gw-board-size">Characters if auto-fit is off</label>
+            <input type="number" id="gw-board-size" min="6" max="60" value="24">
+            <p id="gw-auto-fit-note" class="small-note">Auto-fit will choose a safe amount for the smaller screen.</p>
+          </div>
+
+          <div id="gw-manual-options" class="hidden">
+            <p class="small-note">Choose exactly which saved characters should appear on this board.</p>
+            <div class="picker-tools">
+              <input type="search" id="gw-character-search" placeholder="Search characters...">
+              <button id="gw-select-visible-btn" type="button" class="secondary-btn">Select Visible</button>
+              <button id="gw-clear-selection-btn" type="button" class="secondary-btn">Clear</button>
+            </div>
+            <p id="gw-selected-count" class="small-note">0 selected</p>
+            <div id="gw-character-picker" class="character-picker-grid"></div>
+          </div>
+
           <p id="gw-library-count-lobby" class="small-note">Library count: -</p>
           <button id="gw-start-round-btn" class="purple-btn">Start Character Selection</button>
           <button id="gw-reset-scores-btn" class="secondary-btn">Reset Guess Who Scores</button>
@@ -401,8 +501,10 @@
             <div id="gw-points-panel" class="panel" style="margin-top: 14px;">
               <h3>Assign Points</h3>
               <div id="gw-point-inputs"></div>
-              <label for="gw-next-board-size">Next board size</label>
+              <label class="inline-checkbox"><input type="checkbox" id="gw-next-auto-fit" checked> Auto-fit next random board</label>
+              <label for="gw-next-board-size">Next board size if auto-fit is off</label>
               <input type="number" id="gw-next-board-size" min="6" max="60" value="24">
+              <p class="small-note">Next Round randomizes again. Return to lobby if you want to manually choose a new board.</p>
               <div class="button-row two">
                 <button id="gw-next-round-btn" class="purple-btn">Save Points & Next Round</button>
                 <button id="gw-return-lobby-btn" class="secondary-btn">Save Points & Lobby</button>

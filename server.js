@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const multer = require('multer');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -334,6 +335,7 @@ function attachPlayerToSocket(socket, code, playerId, name) {
   player.offline = false;
   player.disconnectedAt = null;
   if (name) player.name = name;
+  if (boardCapacity) player.boardCapacity = clampGuessWhoBoardCapacity(boardCapacity);
 
   socket.join(code);
   emitRoomUpdated(code);
@@ -430,28 +432,72 @@ async function readGuessWhoLibrary() {
 }
 
 async function writeGuessWhoLibrary(characters) {
-  const sorted = [...characters].sort((a, b) => a.name.localeCompare(b.name));
+  const sorted = [...characters].sort((a, b) => normalizeCharacterDisplayName(a.name).localeCompare(
+    normalizeCharacterDisplayName(b.name),
+    undefined,
+    { sensitivity: 'base' }
+  ));
   await fsp.writeFile(GUESS_WHO_LIBRARY_FILE, JSON.stringify(sorted, null, 2), 'utf8');
   return sorted;
 }
 
-function characterNameFromFileName(fileName) {
-  const baseName = path.basename(fileName, path.extname(fileName));
-  const spaced = baseName
+function decodeLikelyMojibake(text) {
+  const value = String(text || '');
+  const hasArabic = /[\u0600-\u06FF]/.test(value);
+  const looksMojibake = /[ÃÂØÙÐÑ]/.test(value);
+
+  if (hasArabic || !looksMojibake) return value;
+
+  try {
+    const decoded = Buffer.from(value, 'latin1').toString('utf8');
+    if (/[\u0600-\u06FF]/.test(decoded) && !decoded.includes('�')) {
+      return decoded;
+    }
+  } catch (error) {
+    // Keep the original value if decoding fails.
+  }
+
+  return value;
+}
+
+function titleCaseDisplayName(text) {
+  return String(text || '').replace(/[\p{L}\p{M}\p{N}'’.]+/gu, word => {
+    // Arabic and other scripts without casing should be left exactly as typed.
+    if (!/[A-Za-z]/.test(word)) return word;
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  });
+}
+
+function normalizeCharacterDisplayName(name) {
+  return decodeLikelyMojibake(name)
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim() || 'Unknown Character';
+}
+
+function characterNameFromFileName(fileName) {
+  const decodedFileName = decodeLikelyMojibake(fileName);
+  const baseName = path.basename(decodedFileName, path.extname(decodedFileName));
+  const spaced = normalizeCharacterDisplayName(baseName);
 
   if (!spaced) return 'Unknown Character';
 
-  return spaced.replace(/\b\w/g, letter => letter.toUpperCase());
+  return titleCaseDisplayName(spaced);
+}
+
+function shortHash(text) {
+  return crypto.createHash('sha1').update(String(text || '')).digest('hex').slice(0, 10);
 }
 
 function slugify(text) {
-  return String(text || 'character')
+  const asciiSlug = String(text || 'character')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'character';
+    .replace(/^-+|-+$/g, '');
+
+  return asciiSlug || `character-${shortHash(text)}`;
 }
 
 function uniqueId(baseId, existingIds) {
@@ -470,7 +516,7 @@ function uniqueId(baseId, existingIds) {
 function publicGuessWhoCharacter(character) {
   return {
     id: character.id,
-    name: character.name,
+    name: normalizeCharacterDisplayName(character.name),
     imageUrl: character.imageUrl
   };
 }
@@ -657,7 +703,7 @@ function emitGuessWhoState(code) {
   });
 }
 
-function attachGuessWhoPlayerToSocket(socket, code, playerId, name) {
+function attachGuessWhoPlayerToSocket(socket, code, playerId, name, boardCapacity) {
   const room = guessWhoRooms[code];
   if (!room || !playerId) return false;
 
@@ -671,6 +717,7 @@ function attachGuessWhoPlayerToSocket(socket, code, playerId, name) {
   player.offline = false;
   player.disconnectedAt = null;
   if (name) player.name = name;
+  if (boardCapacity) player.boardCapacity = clampGuessWhoBoardCapacity(boardCapacity);
 
   socket.join(guessWhoChannel(code));
   emitGuessWhoState(code);
@@ -707,21 +754,84 @@ function sampleCharacters(characters, amount) {
     .map(publicGuessWhoCharacter);
 }
 
-async function prepareGuessWhoRound(room, boardSize) {
+function clampGuessWhoBoardCapacity(value) {
+  const parsed = parseInt(value, 10);
+  if (!Number.isInteger(parsed)) return GUESS_WHO_DEFAULT_BOARD_SIZE;
+  return Math.max(GUESS_WHO_MIN_CHARACTERS, Math.min(parsed, GUESS_WHO_MAX_BOARD_SIZE));
+}
+
+function getAutoGuessWhoBoardSize(room, libraryLength) {
+  const onlineCapacities = room.players
+    .filter(player => !player.offline)
+    .map(player => clampGuessWhoBoardCapacity(player.boardCapacity))
+    .filter(Number.isInteger);
+
+  const safestCapacity = onlineCapacities.length > 0
+    ? Math.min(...onlineCapacities)
+    : GUESS_WHO_DEFAULT_BOARD_SIZE;
+
+  return Math.max(
+    GUESS_WHO_MIN_CHARACTERS,
+    Math.min(safestCapacity, GUESS_WHO_MAX_BOARD_SIZE, libraryLength)
+  );
+}
+
+function getSelectedGuessWhoCharacters(library, selectedCharacterIds) {
+  if (!Array.isArray(selectedCharacterIds)) return [];
+
+  const libraryById = new Map(library.map(character => [character.id, character]));
+  const seen = new Set();
+  const selected = [];
+
+  selectedCharacterIds.forEach(id => {
+    const cleanId = String(id || '').trim();
+    if (!cleanId || seen.has(cleanId)) return;
+
+    const character = libraryById.get(cleanId);
+    if (!character) return;
+
+    seen.add(cleanId);
+    selected.push(character);
+  });
+
+  return selected;
+}
+
+async function prepareGuessWhoRound(room, options = {}) {
   const library = await readGuessWhoLibrary();
   if (library.length < GUESS_WHO_MIN_CHARACTERS) {
     throw new Error(`Upload at least ${GUESS_WHO_MIN_CHARACTERS} Guess Who characters before starting.`);
   }
 
-  const size = clampGuessWhoBoardSize(boardSize, library.length);
-  room.board = sampleCharacters(library, size);
+  const selectionMode = options.selectionMode === 'selected' ? 'selected' : 'random';
+
+  if (selectionMode === 'selected') {
+    const selectedCharacters = getSelectedGuessWhoCharacters(library, options.selectedCharacterIds);
+
+    if (selectedCharacters.length < GUESS_WHO_MIN_CHARACTERS) {
+      throw new Error(`Select at least ${GUESS_WHO_MIN_CHARACTERS} characters for the Guess Who board.`);
+    }
+
+    if (selectedCharacters.length > GUESS_WHO_MAX_BOARD_SIZE) {
+      throw new Error(`Please select ${GUESS_WHO_MAX_BOARD_SIZE} characters or fewer.`);
+    }
+
+    room.board = selectedCharacters.map(publicGuessWhoCharacter);
+  } else {
+    const size = options.autoFit
+      ? getAutoGuessWhoBoardSize(room, library.length)
+      : clampGuessWhoBoardSize(options.boardSize, library.length);
+
+    room.board = sampleCharacters(library, size);
+  }
+
   room.status = 'selecting';
   room.roundId += 1;
   room.messages = [];
   room.players.forEach(player => {
     player.selectedCharacterId = null;
   });
-  addGuessWhoSystemMessage(room, `Round ${room.roundId} started. Pick your secret character.`);
+  addGuessWhoSystemMessage(room, `Round ${room.roundId} started with ${room.board.length} characters. Pick your secret character.`);
 }
 
 function awardGuessWhoPoints(room, pointsData = {}) {
@@ -929,11 +1039,22 @@ io.on('connection', (socket) => {
   // ----- Guess Who Game -----
   socket.on('gwSyncState', (payload = {}) => {
     const code = normalizeRoomCode(payload.roomCode);
-    const success = attachGuessWhoPlayerToSocket(socket, code, payload.playerId);
+    const success = attachGuessWhoPlayerToSocket(socket, code, payload.playerId, null, payload.boardCapacity);
     if (!success) socket.emit('gwRejoinFailed');
   });
 
-  socket.on('gwCreateRoom', ({ name, playerId } = {}) => {
+  socket.on('gwUpdateViewport', ({ roomCode, playerId, boardCapacity } = {}) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = guessWhoRooms[code];
+    if (!room || !playerId) return;
+
+    const player = room.players.find(p => p.playerId === playerId && p.id === socket.id);
+    if (!player) return;
+
+    player.boardCapacity = clampGuessWhoBoardCapacity(boardCapacity);
+  });
+
+  socket.on('gwCreateRoom', ({ name, playerId, boardCapacity } = {}) => {
     const cleanName = String(name || '').trim();
     if (!cleanName) return socket.emit('gwErrorMsg', 'Please enter a name first.');
     if (!playerId) return socket.emit('gwErrorMsg', 'Could not identify player. Please refresh and try again.');
@@ -949,7 +1070,8 @@ io.on('connection', (socket) => {
         score: 0,
         offline: false,
         disconnectedAt: null,
-        selectedCharacterId: null
+        selectedCharacterId: null,
+        boardCapacity: clampGuessWhoBoardCapacity(boardCapacity)
       }],
       status: 'lobby',
       board: [],
@@ -962,7 +1084,7 @@ io.on('connection', (socket) => {
     sendGuessWhoState(socket, guessWhoRooms[roomCode], playerId);
   });
 
-  socket.on('gwJoinRoom', ({ roomCode, playerName, playerId } = {}) => {
+  socket.on('gwJoinRoom', ({ roomCode, playerName, playerId, boardCapacity } = {}) => {
     const code = normalizeRoomCode(roomCode);
     const room = guessWhoRooms[code];
     const cleanName = String(playerName || '').trim();
@@ -973,7 +1095,7 @@ io.on('connection', (socket) => {
 
     const existingPlayer = room.players.find(player => player.playerId === playerId);
     if (existingPlayer) {
-      attachGuessWhoPlayerToSocket(socket, code, playerId, cleanName);
+      attachGuessWhoPlayerToSocket(socket, code, playerId, cleanName, boardCapacity);
       return;
     }
 
@@ -994,14 +1116,15 @@ io.on('connection', (socket) => {
       score: 0,
       offline: false,
       disconnectedAt: null,
-      selectedCharacterId: null
+      selectedCharacterId: null,
+      boardCapacity: clampGuessWhoBoardCapacity(boardCapacity)
     });
 
     socket.join(guessWhoChannel(code));
     emitGuessWhoState(code);
   });
 
-  socket.on('gwStartSelection', async ({ roomCode, boardSize } = {}) => {
+  socket.on('gwStartSelection', async ({ roomCode, boardSize, autoFit, selectionMode, selectedCharacterIds } = {}) => {
     const code = normalizeRoomCode(roomCode);
     const room = guessWhoRooms[code];
     if (!room) return;
@@ -1019,7 +1142,7 @@ io.on('connection', (socket) => {
     }
 
     try {
-      await prepareGuessWhoRound(room, boardSize);
+      await prepareGuessWhoRound(room, { boardSize, autoFit, selectionMode, selectedCharacterIds });
       emitGuessWhoState(code);
     } catch (error) {
       socket.emit('gwErrorMsg', error.message || 'Could not start Guess Who.');
@@ -1098,7 +1221,7 @@ io.on('connection', (socket) => {
     emitGuessWhoState(code);
   });
 
-  socket.on('gwNextRound', async ({ roomCode, pointsData = {}, boardSize } = {}) => {
+  socket.on('gwNextRound', async ({ roomCode, pointsData = {}, boardSize, autoFit } = {}) => {
     const code = normalizeRoomCode(roomCode);
     const room = guessWhoRooms[code];
     if (!room) return;
@@ -1110,7 +1233,7 @@ io.on('connection', (socket) => {
     awardGuessWhoPoints(room, pointsData);
 
     try {
-      await prepareGuessWhoRound(room, boardSize);
+      await prepareGuessWhoRound(room, { boardSize, autoFit, selectionMode: 'random' });
       emitGuessWhoState(code);
     } catch (error) {
       socket.emit('gwErrorMsg', error.message || 'Could not start the next Guess Who round.');

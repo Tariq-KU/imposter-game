@@ -35,6 +35,10 @@ let guessWhoRevealedSecrets = [];
 let guessWhoSelectedCharacterId = '';
 let guessWhoEliminated = new Set();
 let guessWhoLibraryCount = 0;
+let guessWhoLibrary = [];
+let guessWhoManualSelected = new Set();
+let guessWhoLibraryFilter = '';
+let viewportUpdateTimer = null;
 
 const appCard = document.getElementById('app-card');
 const screens = Array.from(document.querySelectorAll('.screen'));
@@ -44,6 +48,11 @@ function showScreen(screenId, wide = false) {
   const screen = document.getElementById(screenId);
   if (screen) screen.classList.remove('hidden');
   appCard.classList.toggle('narrow', !wide);
+  appCard.classList.toggle('guesswho-play-layout', ['gw-selection-screen', 'gw-game-screen'].includes(screenId));
+
+  if (['gw-lobby-screen', 'gw-selection-screen', 'gw-game-screen'].includes(screenId)) {
+    setTimeout(sendGuessWhoViewportInfo, 150);
+  }
 }
 
 function setActiveGame(gameType) {
@@ -110,6 +119,9 @@ selectImposterBtn.addEventListener('click', () => {
 selectGuessWhoBtn.addEventListener('click', async () => {
   showScreen('gw-setup-screen', false);
   setMessage(gwSetupError, '');
+  updateGuessWhoAutoFitNote();
+  if (gwAutoFitCheckbox) gwBoardSizeInput.disabled = gwAutoFitCheckbox.checked;
+  if (gwNextAutoFit) gwNextBoardSize.disabled = gwNextAutoFit.checked;
   await refreshGuessWhoLibraryCount();
 });
 
@@ -173,7 +185,17 @@ const gwPlayerList = document.getElementById('gw-player-list');
 const gwGamePlayerList = document.getElementById('gw-game-player-list');
 const gwLobbyStatus = document.getElementById('gw-lobby-status');
 const gwHostControls = document.getElementById('gw-host-controls');
+const gwBoardSourceSelect = document.getElementById('gw-board-source');
+const gwRandomOptions = document.getElementById('gw-random-options');
+const gwManualOptions = document.getElementById('gw-manual-options');
+const gwAutoFitCheckbox = document.getElementById('gw-auto-fit');
+const gwAutoFitNote = document.getElementById('gw-auto-fit-note');
 const gwBoardSizeInput = document.getElementById('gw-board-size');
+const gwCharacterSearch = document.getElementById('gw-character-search');
+const gwCharacterPicker = document.getElementById('gw-character-picker');
+const gwSelectedCount = document.getElementById('gw-selected-count');
+const gwSelectVisibleBtn = document.getElementById('gw-select-visible-btn');
+const gwClearSelectionBtn = document.getElementById('gw-clear-selection-btn');
 const gwStartRoundBtn = document.getElementById('gw-start-round-btn');
 const gwResetScoresBtn = document.getElementById('gw-reset-scores-btn');
 const gwLobbyError = document.getElementById('gw-lobby-error');
@@ -196,6 +218,7 @@ const gwRevealedPanel = document.getElementById('gw-revealed-panel');
 const gwRevealGrid = document.getElementById('gw-reveal-grid');
 const gwPointsPanel = document.getElementById('gw-points-panel');
 const gwPointInputs = document.getElementById('gw-point-inputs');
+const gwNextAutoFit = document.getElementById('gw-next-auto-fit');
 const gwNextBoardSize = document.getElementById('gw-next-board-size');
 const gwNextRoundBtn = document.getElementById('gw-next-round-btn');
 const gwReturnLobbyBtn = document.getElementById('gw-return-lobby-btn');
@@ -657,6 +680,58 @@ socket.on('gameReset', ({ roomCode, players }) => {
   handleLobbyEntry(roomCode || currentRoomCode, players);
 });
 
+
+function clampNumber(value, min, max) {
+  const parsed = parseInt(value, 10);
+  if (!Number.isInteger(parsed)) return min;
+  return Math.max(min, Math.min(parsed, max));
+}
+
+function estimateGuessWhoBoardCapacity() {
+  const viewportWidth = Math.max(320, window.innerWidth || document.documentElement.clientWidth || 390);
+  const viewportHeight = Math.max(520, window.innerHeight || document.documentElement.clientHeight || 720);
+  const isMobile = viewportWidth < 760;
+
+  const boardWidth = isMobile
+    ? viewportWidth - 28
+    : Math.min(viewportWidth - 420, 1060);
+
+  const cardWidth = isMobile ? 74 : 104;
+  const cardHeight = isMobile ? 98 : 124;
+  const gap = isMobile ? 6 : 10;
+  const reservedHeight = isMobile ? 265 : 210;
+
+  const columns = Math.max(isMobile ? 3 : 5, Math.floor((boardWidth + gap) / (cardWidth + gap)));
+  const rows = Math.max(3, Math.floor((viewportHeight - reservedHeight) / (cardHeight + gap)));
+
+  return clampNumber(columns * rows, 6, 60);
+}
+
+function updateGuessWhoAutoFitNote() {
+  const estimate = estimateGuessWhoBoardCapacity();
+  if (gwAutoFitNote) {
+    gwAutoFitNote.textContent = `Auto-fit estimate for this device: about ${estimate} characters. The server uses the smaller estimate between both players.`;
+  }
+}
+
+function sendGuessWhoViewportInfo() {
+  const activeRoom = getActiveGuessWhoRoomCode();
+  if (!activeRoom || !socket.connected) return;
+
+  socket.emit('gwUpdateViewport', {
+    roomCode: activeRoom,
+    playerId: myPlayerId,
+    boardCapacity: estimateGuessWhoBoardCapacity()
+  });
+
+  updateGuessWhoAutoFitNote();
+}
+
+window.addEventListener('resize', () => {
+  clearTimeout(viewportUpdateTimer);
+  viewportUpdateTimer = setTimeout(sendGuessWhoViewportInfo, 250);
+});
+
 // --------------------------
 // Guess Who library/admin
 // --------------------------
@@ -669,10 +744,12 @@ async function getGuessWhoCharacters() {
 
 async function refreshGuessWhoLibraryCount() {
   try {
-    const characters = await getGuessWhoCharacters();
-    guessWhoLibraryCount = characters.length;
+    guessWhoLibrary = await getGuessWhoCharacters();
+    guessWhoLibraryCount = guessWhoLibrary.length;
     gwLibraryCount.textContent = `${guessWhoLibraryCount} saved Guess Who characters available.`;
     gwLibraryCountLobby.textContent = `Library count: ${guessWhoLibraryCount}`;
+    renderGuessWhoCharacterPicker();
+    updateGuessWhoAutoFitNote();
     return guessWhoLibraryCount;
   } catch (error) {
     gwLibraryCount.textContent = 'Could not load character library.';
@@ -686,17 +763,17 @@ async function loadAdminLibrary() {
   setMessage(adminStatus, '');
 
   try {
-    const characters = await getGuessWhoCharacters();
-    adminLibraryCount.textContent = `${characters.length}`;
+    guessWhoLibrary = await getGuessWhoCharacters();
+    adminLibraryCount.textContent = `${guessWhoLibrary.length}`;
     adminLibraryGrid.innerHTML = '';
 
-    if (characters.length === 0) {
+    if (guessWhoLibrary.length === 0) {
       const empty = createElement('p', 'small-note', 'No characters uploaded yet. Upload images above to build your library.');
       adminLibraryGrid.appendChild(empty);
       return;
     }
 
-    characters.forEach(character => {
+    guessWhoLibrary.forEach(character => {
       const card = createElement('div', 'admin-card');
       const img = document.createElement('img');
       img.src = character.imageUrl;
@@ -704,6 +781,7 @@ async function loadAdminLibrary() {
       img.loading = 'lazy';
 
       const name = createElement('div', 'name', character.name);
+      name.dir = 'auto';
       const deleteBtn = createElement('button', 'danger-btn', 'Delete');
       deleteBtn.addEventListener('click', () => deleteAdminCharacter(character.id, character.name));
 
@@ -809,7 +887,7 @@ gwCreateRoomBtn.addEventListener('click', () => {
   gwCreateRoomBtn.disabled = true;
   gwCreateRoomBtn.textContent = 'Creating...';
   setMessage(gwSetupError, '');
-  socket.emit('gwCreateRoom', { name, playerId: myPlayerId });
+  socket.emit('gwCreateRoom', { name, playerId: myPlayerId, boardCapacity: estimateGuessWhoBoardCapacity() });
 });
 
 gwJoinRoomBtn.addEventListener('click', () => {
@@ -832,14 +910,44 @@ gwJoinRoomBtn.addEventListener('click', () => {
   gwJoinRoomBtn.disabled = true;
   gwJoinRoomBtn.textContent = 'Joining...';
   setMessage(gwSetupError, '');
-  socket.emit('gwJoinRoom', { roomCode: code, playerName: name, playerId: myPlayerId });
+  socket.emit('gwJoinRoom', { roomCode: code, playerName: name, playerId: myPlayerId, boardCapacity: estimateGuessWhoBoardCapacity() });
 });
+
+function getGuessWhoRoundOptions() {
+  const selectionMode = gwBoardSourceSelect.value === 'selected' ? 'selected' : 'random';
+
+  if (selectionMode === 'selected') {
+    const selectedCharacterIds = [...guessWhoManualSelected];
+    if (selectedCharacterIds.length < 6) {
+      setMessage(gwLobbyError, 'Select at least 6 characters, or switch back to randomize.');
+      return null;
+    }
+
+    if (selectedCharacterIds.length > 60) {
+      setMessage(gwLobbyError, 'Select 60 characters or fewer.');
+      return null;
+    }
+
+    return { selectionMode, selectedCharacterIds };
+  }
+
+  return {
+    selectionMode: 'random',
+    autoFit: Boolean(gwAutoFitCheckbox.checked),
+    boardSize: gwBoardSizeInput.value
+  };
+}
 
 gwStartRoundBtn.addEventListener('click', () => {
   setMessage(gwLobbyError, '');
+  sendGuessWhoViewportInfo();
+
+  const options = getGuessWhoRoundOptions();
+  if (!options) return;
+
   socket.emit('gwStartSelection', {
     roomCode: guessWhoRoomCode,
-    boardSize: gwBoardSizeInput.value
+    ...options
   });
 });
 
@@ -871,10 +979,12 @@ gwRevealBtn.addEventListener('click', () => {
 });
 
 gwNextRoundBtn.addEventListener('click', () => {
+  sendGuessWhoViewportInfo();
   socket.emit('gwNextRound', {
     roomCode: guessWhoRoomCode,
     pointsData: collectGuessWhoPoints(),
-    boardSize: gwNextBoardSize.value
+    boardSize: gwNextBoardSize.value,
+    autoFit: Boolean(gwNextAutoFit.checked)
   });
 });
 
@@ -933,6 +1043,87 @@ function saveGuessWhoEliminated() {
   localStorage.setItem(guessWhoEliminatedKey(), JSON.stringify([...guessWhoEliminated]));
 }
 
+
+function updateGuessWhoBoardSourceUI() {
+  const manual = gwBoardSourceSelect.value === 'selected';
+  gwManualOptions.classList.toggle('hidden', !manual);
+  gwRandomOptions.classList.toggle('hidden', manual);
+  renderGuessWhoCharacterPicker();
+}
+
+function getFilteredGuessWhoLibrary() {
+  const query = guessWhoLibraryFilter.trim().toLowerCase();
+  if (!query) return guessWhoLibrary;
+
+  return guessWhoLibrary.filter(character => character.name.toLowerCase().includes(query));
+}
+
+function renderGuessWhoCharacterPicker() {
+  if (!gwCharacterPicker) return;
+
+  const filtered = getFilteredGuessWhoLibrary();
+  gwCharacterPicker.innerHTML = '';
+  gwSelectedCount.textContent = `${guessWhoManualSelected.size} selected`;
+
+  if (guessWhoLibrary.length === 0) {
+    gwCharacterPicker.appendChild(createElement('p', 'small-note', 'No saved characters yet. Upload characters from the admin page first.'));
+    return;
+  }
+
+  if (filtered.length === 0) {
+    gwCharacterPicker.appendChild(createElement('p', 'small-note', 'No characters match this search.'));
+    return;
+  }
+
+  filtered.forEach(character => {
+    const card = createElement('button', 'picker-card');
+    card.type = 'button';
+    card.dataset.id = character.id;
+    if (guessWhoManualSelected.has(character.id)) card.classList.add('selected');
+
+    const img = document.createElement('img');
+    img.src = character.imageUrl;
+    img.alt = character.name;
+    img.loading = 'lazy';
+
+    const name = createElement('div', 'name', character.name);
+    name.dir = 'auto';
+
+    card.appendChild(img);
+    card.appendChild(name);
+    card.addEventListener('click', () => {
+      if (guessWhoManualSelected.has(character.id)) {
+        guessWhoManualSelected.delete(character.id);
+      } else {
+        guessWhoManualSelected.add(character.id);
+      }
+      renderGuessWhoCharacterPicker();
+    });
+
+    gwCharacterPicker.appendChild(card);
+  });
+}
+
+if (gwBoardSourceSelect) gwBoardSourceSelect.addEventListener('change', updateGuessWhoBoardSourceUI);
+if (gwCharacterSearch) gwCharacterSearch.addEventListener('input', () => {
+  guessWhoLibraryFilter = gwCharacterSearch.value;
+  renderGuessWhoCharacterPicker();
+});
+if (gwSelectVisibleBtn) gwSelectVisibleBtn.addEventListener('click', () => {
+  getFilteredGuessWhoLibrary().forEach(character => guessWhoManualSelected.add(character.id));
+  renderGuessWhoCharacterPicker();
+});
+if (gwClearSelectionBtn) gwClearSelectionBtn.addEventListener('click', () => {
+  guessWhoManualSelected.clear();
+  renderGuessWhoCharacterPicker();
+});
+if (gwAutoFitCheckbox) gwAutoFitCheckbox.addEventListener('change', () => {
+  gwBoardSizeInput.disabled = gwAutoFitCheckbox.checked;
+});
+if (gwNextAutoFit) gwNextAutoFit.addEventListener('change', () => {
+  gwNextBoardSize.disabled = gwNextAutoFit.checked;
+});
+
 function renderGuessWhoPlayers() {
   const lists = [gwPlayerList, gwGamePlayerList];
   lists.forEach(list => { list.innerHTML = ''; });
@@ -987,6 +1178,7 @@ function createCharacterCard(character, options = {}) {
   img.loading = 'lazy';
 
   const name = createElement('div', 'name', character.name);
+  name.dir = 'auto';
   card.appendChild(img);
   card.appendChild(name);
   return card;
@@ -1032,6 +1224,7 @@ function renderSecretCardContent(character, labelText) {
   const text = document.createElement('div');
   const label = createElement('div', 'small-note', labelText);
   const name = createElement('h3', '', character.name);
+  name.dir = 'auto';
   name.style.margin = '3px 0 0 0';
   text.appendChild(label);
   text.appendChild(name);
@@ -1082,6 +1275,7 @@ function renderGuessWhoMessages() {
     } else {
       const name = createElement('span', 'name', `${message.name}: `);
       const body = createElement('span', '', message.text);
+      body.dir = 'auto';
       const time = createElement('span', 'small-note', ` ${getTimeLabel(message.timestamp)}`);
       item.appendChild(name);
       item.appendChild(body);
@@ -1159,8 +1353,9 @@ function handleGuessWhoState(state) {
   setMessage(gwGameError, '');
 
   if (guessWhoStatus === 'lobby') {
-    showScreen('gw-lobby-screen', false);
+    showScreen('gw-lobby-screen', true);
     refreshGuessWhoLibraryCount();
+    updateGuessWhoBoardSourceUI();
     return;
   }
 
@@ -1206,6 +1401,11 @@ socket.on('gwRejoinFailed', () => {
 // --------------------------
 // Initial view
 // --------------------------
+updateGuessWhoBoardSourceUI();
+updateGuessWhoAutoFitNote();
+if (gwAutoFitCheckbox) gwBoardSizeInput.disabled = gwAutoFitCheckbox.checked;
+if (gwNextAutoFit) gwNextBoardSize.disabled = gwNextAutoFit.checked;
+
 (function init() {
   const activeGame = localStorage.getItem('party-activeGame');
   const hasImposterRoom = localStorage.getItem('imposter-roomCode');
