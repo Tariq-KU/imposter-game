@@ -21,7 +21,7 @@ const GUESS_WHO_MIN_CHARACTERS = 6;
 const GUESS_WHO_DEFAULT_BOARD_SIZE = 24;
 const GUESS_WHO_MAX_BOARD_SIZE = 60;
 const MAX_CHAT_MESSAGES = 100;
-const ADMIN_UPLOAD_PASSWORD = process.env.ADMIN_UPLOAD_PASSWORD || '';
+const ADMIN_UPLOAD_PASSWORD = String(process.env.ADMIN_UPLOAD_PASSWORD || '').trim();
 
 const io = new Server(server, {
   pingTimeout: 120000,
@@ -335,7 +335,6 @@ function attachPlayerToSocket(socket, code, playerId, name) {
   player.offline = false;
   player.disconnectedAt = null;
   if (name) player.name = name;
-  if (boardCapacity) player.boardCapacity = clampGuessWhoBoardCapacity(boardCapacity);
 
   socket.join(code);
   emitRoomUpdated(code);
@@ -388,20 +387,30 @@ function validateCategories(selectedCategories) {
 const allowedImageMimeTypes = new Map([
   ['image/jpeg', '.jpg'],
   ['image/png', '.png'],
-  ['image/webp', '.webp']
+  ['image/webp', '.webp'],
+  ['image/gif', '.gif'],
+  ['image/avif', '.avif']
 ]);
+
+const blockedImageMimeTypes = new Set(['image/heic', 'image/heif']);
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     files: 120,
-    fileSize: 5 * 1024 * 1024
+    fileSize: 8 * 1024 * 1024
   },
   fileFilter: (req, file, cb) => {
-    if (!allowedImageMimeTypes.has(file.mimetype)) {
-      cb(new Error('Only JPG, PNG, and WEBP images are allowed.'));
+    if (blockedImageMimeTypes.has(file.mimetype)) {
+      cb(new Error('HEIC/HEIF photos are not browser-friendly here. Please upload JPG, PNG, WEBP, GIF, or AVIF images.'));
       return;
     }
+
+    if (!allowedImageMimeTypes.has(file.mimetype)) {
+      cb(new Error('Only JPG, PNG, WEBP, GIF, and AVIF images are allowed.'));
+      return;
+    }
+
     cb(null, true);
   }
 });
@@ -413,7 +422,7 @@ function requireAdminPassword(req, res, next) {
     });
   }
 
-  const suppliedPassword = req.get('x-admin-password') || req.body?.adminPassword || '';
+  const suppliedPassword = String(req.get('x-admin-password') || req.body?.adminPassword || '').trim();
   if (suppliedPassword !== ADMIN_UPLOAD_PASSWORD) {
     return res.status(401).json({ message: 'Invalid admin password.' });
   }
@@ -528,48 +537,63 @@ app.get('/api/guess-who/characters', async (req, res) => {
 
 app.post('/api/admin/guess-who/upload', requireAdminPassword, (req, res, next) => {
   upload.array('images', 120)(req, res, err => {
-    if (err) {
-      return res.status(400).json({ message: err.message || 'Upload failed.' });
+    if (!err) return next();
+
+    let message = err.message || 'Upload failed.';
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      message = 'One or more images are too large. Each image must be 8 MB or smaller.';
+    } else if (err.code === 'LIMIT_FILE_COUNT') {
+      message = 'Too many images selected. Upload 120 images or fewer at a time.';
     }
-    next();
+
+    return res.status(400).json({ message });
   });
 }, async (req, res) => {
-  const files = Array.isArray(req.files) ? req.files : [];
-  if (files.length === 0) {
-    return res.status(400).json({ message: 'Please choose at least one image.' });
+  try {
+    ensureDirectorySync(GUESS_WHO_LIBRARY_DIR);
+
+    const files = Array.isArray(req.files) ? req.files : [];
+    if (files.length === 0) {
+      return res.status(400).json({ message: 'Please choose at least one image.' });
+    }
+
+    const library = await readGuessWhoLibrary();
+    const existingIds = new Set(library.map(character => character.id));
+    const added = [];
+
+    for (const file of files) {
+      const name = characterNameFromFileName(file.originalname);
+      const baseId = slugify(name);
+      const id = uniqueId(baseId, existingIds);
+      const extension = allowedImageMimeTypes.get(file.mimetype);
+      const storedFileName = `${id}${extension}`;
+      const storedPath = path.join(GUESS_WHO_LIBRARY_DIR, storedFileName);
+
+      await fsp.writeFile(storedPath, file.buffer);
+
+      const character = {
+        id,
+        name,
+        imageUrl: `/uploads/guess-who-library/${storedFileName}`,
+        fileName: storedFileName,
+        createdAt: new Date().toISOString()
+      };
+
+      library.push(character);
+      added.push(publicGuessWhoCharacter(character));
+    }
+
+    const saved = await writeGuessWhoLibrary(library);
+    res.json({
+      added,
+      characters: saved.map(publicGuessWhoCharacter)
+    });
+  } catch (error) {
+    console.error('Guess Who upload failed:', error);
+    res.status(500).json({
+      message: 'Upload failed while saving the images. Check server permissions/storage and try again.'
+    });
   }
-
-  const library = await readGuessWhoLibrary();
-  const existingIds = new Set(library.map(character => character.id));
-  const added = [];
-
-  for (const file of files) {
-    const name = characterNameFromFileName(file.originalname);
-    const baseId = slugify(name);
-    const id = uniqueId(baseId, existingIds);
-    const extension = allowedImageMimeTypes.get(file.mimetype);
-    const storedFileName = `${id}${extension}`;
-    const storedPath = path.join(GUESS_WHO_LIBRARY_DIR, storedFileName);
-
-    await fsp.writeFile(storedPath, file.buffer);
-
-    const character = {
-      id,
-      name,
-      imageUrl: `/uploads/guess-who-library/${storedFileName}`,
-      fileName: storedFileName,
-      createdAt: new Date().toISOString()
-    };
-
-    library.push(character);
-    added.push(publicGuessWhoCharacter(character));
-  }
-
-  const saved = await writeGuessWhoLibrary(library);
-  res.json({
-    added,
-    characters: saved.map(publicGuessWhoCharacter)
-  });
 });
 
 app.delete('/api/admin/guess-who/characters/:id', requireAdminPassword, async (req, res) => {

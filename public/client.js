@@ -286,33 +286,49 @@ function rememberGuessWhoRoom(code) {
 function requestCurrentState() {
   if (intentionallyLeftRoom) return;
 
-  const activeGame = localStorage.getItem('party-activeGame');
-  const now = Date.now();
-  if (now - lastStateSyncRequest < 300) return;
-  lastStateSyncRequest = now;
+  let activeGame = localStorage.getItem('party-activeGame');
+  const imposterRoom = getActiveRoomCode();
+  const guessWhoRoom = getActiveGuessWhoRoomCode();
+
+  // Be forgiving after refreshes or old localStorage states. The old site only had
+  // imposter rooms, so some browsers may have an imposter room saved without
+  // party-activeGame being set.
+  if (!activeGame) {
+    activeGame = guessWhoRoom ? 'guessWho' : (imposterRoom ? 'imposter' : '');
+  }
+
+  if (activeGame === 'guessWho' && !guessWhoRoom && imposterRoom) {
+    activeGame = 'imposter';
+  }
+
+  if (activeGame === 'imposter' && !imposterRoom && guessWhoRoom) {
+    activeGame = 'guessWho';
+  }
 
   if (!socket.connected) {
     socket.connect();
     return;
   }
 
-  if (activeGame === 'guessWho') {
-    const activeRoom = getActiveGuessWhoRoomCode();
-    if (!activeRoom) return;
-    socket.emit('gwSyncState', { roomCode: activeRoom, playerId: myPlayerId });
+  const now = Date.now();
+  if (now - lastStateSyncRequest < 300) return;
+  lastStateSyncRequest = now;
+
+  if (activeGame === 'guessWho' && guessWhoRoom) {
+    socket.emit('gwSyncState', { roomCode: guessWhoRoom, playerId: myPlayerId });
     return;
   }
 
-  if (activeGame === 'imposter') {
-    const activeRoom = getActiveRoomCode();
-    if (!activeRoom) return;
-    socket.emit('syncState', { roomCode: activeRoom, playerId: myPlayerId });
+  if (activeGame === 'imposter' && imposterRoom) {
+    socket.emit('syncState', { roomCode: imposterRoom, playerId: myPlayerId });
   }
 }
 
 function recoverFromMobileResume() {
   const activeGame = localStorage.getItem('party-activeGame');
-  const hasActiveRoom = activeGame === 'guessWho' ? getActiveGuessWhoRoomCode() : getActiveRoomCode();
+  const hasActiveRoom = activeGame === 'guessWho'
+    ? getActiveGuessWhoRoomCode()
+    : (getActiveRoomCode() || getActiveGuessWhoRoomCode());
   if (!hasActiveRoom || intentionallyLeftRoom) return;
 
   const timeHidden = Date.now() - lastVisibilityChange;
@@ -824,8 +840,17 @@ async function uploadAdminImages(files) {
       body: formData
     });
 
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.message || 'Upload failed.');
+    const responseText = await response.text();
+    let data = {};
+    try {
+      data = responseText ? JSON.parse(responseText) : {};
+    } catch (error) {
+      data = {};
+    }
+
+    if (!response.ok) {
+      throw new Error(data.message || responseText || `Upload failed with status ${response.status}.`);
+    }
 
     setMessage(adminStatus, `Uploaded ${data.added?.length || 0} character image(s).`);
     adminFileInput.value = '';
@@ -1407,17 +1432,37 @@ if (gwAutoFitCheckbox) gwBoardSizeInput.disabled = gwAutoFitCheckbox.checked;
 if (gwNextAutoFit) gwNextBoardSize.disabled = gwNextAutoFit.checked;
 
 (function init() {
-  const activeGame = localStorage.getItem('party-activeGame');
+  let activeGame = localStorage.getItem('party-activeGame');
   const hasImposterRoom = localStorage.getItem('imposter-roomCode');
   const hasGuessWhoRoom = localStorage.getItem('guesswho-roomCode');
 
+  if (!activeGame) {
+    activeGame = hasGuessWhoRoom ? 'guessWho' : (hasImposterRoom ? 'imposter' : '');
+  }
+
   if (activeGame === 'imposter' && hasImposterRoom) {
+    localStorage.setItem('party-activeGame', 'imposter');
     showScreen('setup-screen', false);
     requestCurrentState();
     return;
   }
 
   if (activeGame === 'guessWho' && hasGuessWhoRoom) {
+    localStorage.setItem('party-activeGame', 'guessWho');
+    showScreen('gw-setup-screen', false);
+    requestCurrentState();
+    return;
+  }
+
+  if (hasImposterRoom) {
+    localStorage.setItem('party-activeGame', 'imposter');
+    showScreen('setup-screen', false);
+    requestCurrentState();
+    return;
+  }
+
+  if (hasGuessWhoRoom) {
+    localStorage.setItem('party-activeGame', 'guessWho');
     showScreen('gw-setup-screen', false);
     requestCurrentState();
     return;
