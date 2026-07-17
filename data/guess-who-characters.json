@@ -1,1 +1,664 @@
-[]
+{
+  "folders": [
+    {
+      "id": "uncategorized",
+      "name": "Uncategorized",
+      "createdAt": "2026-07-17T15:35:48.959Z"
+    },
+    {
+      "id": "dd",
+      "name": "dd",
+      "createdAt": "2026-07-17T15:35:48.960Z"
+    }
+  ],
+  "characters": [
+    {
+      "id": "dd",
+      "name": "الأفعى",
+      "folderId": "dd",
+      "imageUrl": "/uploads/guess-who-library/dd/dd.png",
+      "fileName": "dd.png",
+      "relativePath": "dd/dd.png",
+      "createdAt": "2026-07-17T15:36:45.515Z"
+    },
+    {
+      "id": "50-cent",
+      "name": "50 Cent",
+      "imageUrl": "/uploads/guess-who-library/50-cent.jpg",
+      "fileName": "50-cent.jpg",
+      "createdAt": "2026-07-04T22:48:47.240Z",
+      "folderId": "uncategorized",
+      "relativePath": "50-cent.jpg"
+    },
+    {
+      "id": "adolf-hitler",
+      "name": "Adolf Hitler",
+      "imageUrl": "/uploads/guess-who-library/adolf-hitler.jpg",
+      "fileName": "adolf-hitler.jpg",
+      "createdAt": "2026-07-04T22:48:47.294Z",
+      "folderId": "uncategorized",
+      "relativePath": "adolf-hitler.jpg"
+    },
+    {
+      "id": "aj-shabeel",
+      "name": "Aj Shabeel",
+      "imageUrl": "/uploads/guess-who-library/aj-shabeel.jpg",
+      "fileName": "aj-shabeel.jpg",
+      "createdAt": "2026-07-04T22:48:47.241Z",
+      "folderId": "uncategorized",
+      "relativePath": "aj-shabeel.jpg"
+    },
+    {
+      "id": "albert-einstein",
+      "name": "Albert Einstein",
+      "imageUrl": "/uploads/guess-who-library/albert-einstein.jpg",
+      "fileName": "albert-einstein.jpg",
+      "createdAt": "2026-07-04T22:48:47.295Z",
+      "folderId": "uncategorized",
+      "relativePath": "albert-einstein.jpg"
+    },
+    {
+      "id": "andrew-tate",
+      "name": "Andrew Tate",
+      "imageUrl": "/uploads/guess-who-library/andrew-tate.png",
+      "fileName": "andrew-tate.png",
+      "createdAt": "2026-07-04T22:48:47.242Z",
+      "folderId": "uncategorized",
+      "relativePath": "andrew-tate.png"
+    },
+    {
+      "id": "bad-bubby",
+      "name": "Bad Bubby",
+      "imageUrl": "/uploads/guess-who-library/bad-bubby.png",
+      "fileName": "bad-bubby.png",
+      "createdAt": "2026-07-04T22:48:47.243Z",
+      "folderId": "uncategorized",
+      "relativePath": "bad-bubby.png"
+    },
+    {
+      "id": "bad-bubby-2",
+      "name": "Bad Bubby",
+      "imageUrl": "/uploads/guess-who-library/bad-bubby-2.png",
+      "fileName": "bad-bubby-2.png",
+      "createdAt": "2026-07-05T11:12:30.689Z",
+      "folderId": "uncategorized",
+      "relativePath": "bad-bubby-2.png"
+    },
+    {
+      "id": "barry-tube",
+      "name": "Barry Tube",
+      "imageUrl": "/uploads/guess-who-library/barry-tube.jpg",
+      "fileName": "barry-tube.jpg",
+      "createdAt": "2026-07-04T22:48:47.244Z",
+      "folderId": "uncategorized",
+      "relativePath": "barry-tube.jpg"
+    },
+    {
+      "id": "batista",
+      "name": "Batista",
+      "imageUrl": "/uploads/guess-who-library/batista.png",
+      "fileName": "batista.png",
+      "createdAt": "2026-07-04T22:48:47.244Z",
+      "folderId": "uncategorized",
+      "relativePath": "batista.png"
+    },
+    {
+      "id": "brock-lesner",
+      "name": "Brock Lesner",
+      "imageUrl": "/uploads/guess-who-library/brock-lesner.jpg",
+      "fileName": "brock-lesner.jpg",
+      "createdAt": "2026-07-04T22:48:47.245Z",
+      "folderId": "uncategorized",
+      "relativePath": "brock-lesner.jpg"
+    },
+    {
+      "id": "charlie",
+      "name": "Charlie",
+      "imageUrl": "/uploads/guess-who-library/charlie.png",
+      "fileName": "charlie.png",
+      "createdAt": "2026-07-04T22:48:47.246Z",
+      "folderId": "uncategorized",
+      "relativePath": "charlie.png"
+    },
+    {
+      "id": "christopher-columbus",
+      "name": "Christopher Columbus",
+      "imageUrl": "/uploads/guess-who-library/christopher-columbus.jpg",
+      "fileName": "christopher-columbus.jpg",
+      "createdAt": "2026-07-04T22:48:47.295Z",
+      "folderId": "uncategorized",
+      "relativePath": "christopher-columbus.jpg"
+    },
+    {
+      "id": "cristiano-ronaldo",
+      "name": "Cristiano Ronaldo",
+      "imageUrl": "/uploads/guess-who-library/cristiano-ronaldo.jpg",
+      "fileName": "cristiano-ronaldo.jpg",
+      "createdAt": "2026-07-04T22:48:47.247Z",
+      "folderId": "uncategorized",
+      "relativePath": "cristiano-ronaldo.jpg"
+    },
+    {
+      "id": "deji",
+      "name": "Deji",
+      "imageUrl": "/uploads/guess-who-library/deji.jpg",
+      "fileName": "deji.jpg",
+      "createdAt": "2026-07-04T22:48:47.248Z",
+      "folderId": "uncategorized",
+      "relativePath": "deji.jpg"
+    },
+    {
+      "id": "diddy",
+      "name": "Diddy",
+      "imageUrl": "/uploads/guess-who-library/diddy.jpg",
+      "fileName": "diddy.jpg",
+      "createdAt": "2026-07-04T22:48:47.249Z",
+      "folderId": "uncategorized",
+      "relativePath": "diddy.jpg"
+    },
+    {
+      "id": "donald-trump",
+      "name": "Donald Trump",
+      "imageUrl": "/uploads/guess-who-library/donald-trump.jpg",
+      "fileName": "donald-trump.jpg",
+      "createdAt": "2026-07-04T22:48:47.250Z",
+      "folderId": "uncategorized",
+      "relativePath": "donald-trump.jpg"
+    },
+    {
+      "id": "drake",
+      "name": "Drake",
+      "imageUrl": "/uploads/guess-who-library/drake.jpg",
+      "fileName": "drake.jpg",
+      "createdAt": "2026-07-04T22:48:47.251Z",
+      "folderId": "uncategorized",
+      "relativePath": "drake.jpg"
+    },
+    {
+      "id": "eminem",
+      "name": "Eminem",
+      "imageUrl": "/uploads/guess-who-library/eminem.jpg",
+      "fileName": "eminem.jpg",
+      "createdAt": "2026-07-04T22:48:47.252Z",
+      "folderId": "uncategorized",
+      "relativePath": "eminem.jpg"
+    },
+    {
+      "id": "gordon-ramsy",
+      "name": "Gordon Ramsy",
+      "imageUrl": "/uploads/guess-who-library/gordon-ramsy.png",
+      "fileName": "gordon-ramsy.png",
+      "createdAt": "2026-07-04T22:48:47.253Z",
+      "folderId": "uncategorized",
+      "relativePath": "gordon-ramsy.png"
+    },
+    {
+      "id": "harry",
+      "name": "Harry",
+      "imageUrl": "/uploads/guess-who-library/harry.jpg",
+      "fileName": "harry.jpg",
+      "createdAt": "2026-07-04T22:48:47.254Z",
+      "folderId": "uncategorized",
+      "relativePath": "harry.jpg"
+    },
+    {
+      "id": "hulk-hogan",
+      "name": "Hulk Hogan",
+      "imageUrl": "/uploads/guess-who-library/hulk-hogan.jpg",
+      "fileName": "hulk-hogan.jpg",
+      "createdAt": "2026-07-04T22:48:47.296Z",
+      "folderId": "uncategorized",
+      "relativePath": "hulk-hogan.jpg"
+    },
+    {
+      "id": "isaac-newton",
+      "name": "Isaac Newton",
+      "imageUrl": "/uploads/guess-who-library/isaac-newton.jpg",
+      "fileName": "isaac-newton.jpg",
+      "createdAt": "2026-07-04T22:48:47.297Z",
+      "folderId": "uncategorized",
+      "relativePath": "isaac-newton.jpg"
+    },
+    {
+      "id": "jake-paul",
+      "name": "Jake Paul",
+      "imageUrl": "/uploads/guess-who-library/jake-paul.jpg",
+      "fileName": "jake-paul.jpg",
+      "createdAt": "2026-07-04T22:48:47.255Z",
+      "folderId": "uncategorized",
+      "relativePath": "jake-paul.jpg"
+    },
+    {
+      "id": "jj",
+      "name": "Jj",
+      "imageUrl": "/uploads/guess-who-library/jj.jpg",
+      "fileName": "jj.jpg",
+      "createdAt": "2026-07-04T22:48:47.256Z",
+      "folderId": "uncategorized",
+      "relativePath": "jj.jpg"
+    },
+    {
+      "id": "john-cena",
+      "name": "John Cena",
+      "imageUrl": "/uploads/guess-who-library/john-cena.png",
+      "fileName": "john-cena.png",
+      "createdAt": "2026-07-04T22:48:47.256Z",
+      "folderId": "uncategorized",
+      "relativePath": "john-cena.png"
+    },
+    {
+      "id": "joseph-stalin",
+      "name": "Joseph Stalin",
+      "imageUrl": "/uploads/guess-who-library/joseph-stalin.jpg",
+      "fileName": "joseph-stalin.jpg",
+      "createdAt": "2026-07-04T22:48:47.298Z",
+      "folderId": "uncategorized",
+      "relativePath": "joseph-stalin.jpg"
+    },
+    {
+      "id": "kai-cenat",
+      "name": "Kai Cenat",
+      "imageUrl": "/uploads/guess-who-library/kai-cenat.jpg",
+      "fileName": "kai-cenat.jpg",
+      "createdAt": "2026-07-04T22:48:47.257Z",
+      "folderId": "uncategorized",
+      "relativePath": "kai-cenat.jpg"
+    },
+    {
+      "id": "khabib",
+      "name": "Khabib",
+      "imageUrl": "/uploads/guess-who-library/khabib.jpg",
+      "fileName": "khabib.jpg",
+      "createdAt": "2026-07-04T22:48:47.258Z",
+      "folderId": "uncategorized",
+      "relativePath": "khabib.jpg"
+    },
+    {
+      "id": "kim-jong-un",
+      "name": "Kim Jong Un",
+      "imageUrl": "/uploads/guess-who-library/kim-jong-un.png",
+      "fileName": "kim-jong-un.png",
+      "createdAt": "2026-07-04T22:48:47.298Z",
+      "folderId": "uncategorized",
+      "relativePath": "kim-jong-un.png"
+    },
+    {
+      "id": "lazarbeam",
+      "name": "Lazarbeam",
+      "imageUrl": "/uploads/guess-who-library/lazarbeam.jpg",
+      "fileName": "lazarbeam.jpg",
+      "createdAt": "2026-07-04T22:48:47.259Z",
+      "folderId": "uncategorized",
+      "relativePath": "lazarbeam.jpg"
+    },
+    {
+      "id": "logan-paul",
+      "name": "Logan Paul",
+      "imageUrl": "/uploads/guess-who-library/logan-paul.jpg",
+      "fileName": "logan-paul.jpg",
+      "createdAt": "2026-07-04T22:48:47.259Z",
+      "folderId": "uncategorized",
+      "relativePath": "logan-paul.jpg"
+    },
+    {
+      "id": "maciejay",
+      "name": "Maciejay",
+      "imageUrl": "/uploads/guess-who-library/maciejay.jpg",
+      "fileName": "maciejay.jpg",
+      "createdAt": "2026-07-04T22:48:47.260Z",
+      "folderId": "uncategorized",
+      "relativePath": "maciejay.jpg"
+    },
+    {
+      "id": "maradona",
+      "name": "Maradona",
+      "imageUrl": "/uploads/guess-who-library/maradona.jpg",
+      "fileName": "maradona.jpg",
+      "createdAt": "2026-07-04T22:48:47.299Z",
+      "folderId": "uncategorized",
+      "relativePath": "maradona.jpg"
+    },
+    {
+      "id": "mbappa",
+      "name": "Mbappã©",
+      "imageUrl": "/uploads/guess-who-library/mbappa.jpg",
+      "fileName": "mbappa.jpg",
+      "createdAt": "2026-07-04T22:48:47.261Z",
+      "folderId": "uncategorized",
+      "relativePath": "mbappa.jpg"
+    },
+    {
+      "id": "mike-tyson",
+      "name": "Mike Tyson",
+      "imageUrl": "/uploads/guess-who-library/mike-tyson.jpg",
+      "fileName": "mike-tyson.jpg",
+      "createdAt": "2026-07-04T22:48:47.261Z",
+      "folderId": "uncategorized",
+      "relativePath": "mike-tyson.jpg"
+    },
+    {
+      "id": "mo-salah",
+      "name": "Mo Salah",
+      "imageUrl": "/uploads/guess-who-library/mo-salah.jpg",
+      "fileName": "mo-salah.jpg",
+      "createdAt": "2026-07-04T22:48:47.262Z",
+      "folderId": "uncategorized",
+      "relativePath": "mo-salah.jpg"
+    },
+    {
+      "id": "mr-beast",
+      "name": "Mr Beast",
+      "imageUrl": "/uploads/guess-who-library/mr-beast.jpg",
+      "fileName": "mr-beast.jpg",
+      "createdAt": "2026-07-04T22:48:47.263Z",
+      "folderId": "uncategorized",
+      "relativePath": "mr-beast.jpg"
+    },
+    {
+      "id": "muhammad-ali",
+      "name": "Muhammad Ali",
+      "imageUrl": "/uploads/guess-who-library/muhammad-ali.png",
+      "fileName": "muhammad-ali.png",
+      "createdAt": "2026-07-04T22:48:47.300Z",
+      "folderId": "uncategorized",
+      "relativePath": "muhammad-ali.png"
+    },
+    {
+      "id": "niko",
+      "name": "Niko",
+      "imageUrl": "/uploads/guess-who-library/niko.jpg",
+      "fileName": "niko.jpg",
+      "createdAt": "2026-07-04T22:48:47.263Z",
+      "folderId": "uncategorized",
+      "relativePath": "niko.jpg"
+    },
+    {
+      "id": "ninja",
+      "name": "Ninja",
+      "imageUrl": "/uploads/guess-who-library/ninja.jpg",
+      "fileName": "ninja.jpg",
+      "createdAt": "2026-07-04T22:48:47.264Z",
+      "folderId": "uncategorized",
+      "relativePath": "ninja.jpg"
+    },
+    {
+      "id": "oppenheimer",
+      "name": "Oppenheimer",
+      "imageUrl": "/uploads/guess-who-library/oppenheimer.jpg",
+      "fileName": "oppenheimer.jpg",
+      "createdAt": "2026-07-04T22:48:47.301Z",
+      "folderId": "uncategorized",
+      "relativePath": "oppenheimer.jpg"
+    },
+    {
+      "id": "pele",
+      "name": "Pele",
+      "imageUrl": "/uploads/guess-who-library/pele.jpg",
+      "fileName": "pele.jpg",
+      "createdAt": "2026-07-04T22:48:47.302Z",
+      "folderId": "uncategorized",
+      "relativePath": "pele.jpg"
+    },
+    {
+      "id": "pewdiepie",
+      "name": "Pewdiepie",
+      "imageUrl": "/uploads/guess-who-library/pewdiepie.jpg",
+      "fileName": "pewdiepie.jpg",
+      "createdAt": "2026-07-04T22:48:47.265Z",
+      "folderId": "uncategorized",
+      "relativePath": "pewdiepie.jpg"
+    },
+    {
+      "id": "pythagoras",
+      "name": "Pythagoras",
+      "imageUrl": "/uploads/guess-who-library/pythagoras.png",
+      "fileName": "pythagoras.png",
+      "createdAt": "2026-07-04T22:48:47.303Z",
+      "folderId": "uncategorized",
+      "relativePath": "pythagoras.png"
+    },
+    {
+      "id": "simon",
+      "name": "Simon",
+      "imageUrl": "/uploads/guess-who-library/simon.jpg",
+      "fileName": "simon.jpg",
+      "createdAt": "2026-07-04T22:48:47.265Z",
+      "folderId": "uncategorized",
+      "relativePath": "simon.jpg"
+    },
+    {
+      "id": "speed",
+      "name": "Speed",
+      "imageUrl": "/uploads/guess-who-library/speed.jpg",
+      "fileName": "speed.jpg",
+      "createdAt": "2026-07-04T22:48:47.266Z",
+      "folderId": "uncategorized",
+      "relativePath": "speed.jpg"
+    },
+    {
+      "id": "the-rock",
+      "name": "The Rock",
+      "imageUrl": "/uploads/guess-who-library/the-rock.png",
+      "fileName": "the-rock.png",
+      "createdAt": "2026-07-04T22:48:47.266Z",
+      "folderId": "uncategorized",
+      "relativePath": "the-rock.png"
+    },
+    {
+      "id": "tom-holland",
+      "name": "Tom Holland",
+      "imageUrl": "/uploads/guess-who-library/tom-holland.jpg",
+      "fileName": "tom-holland.jpg",
+      "createdAt": "2026-07-04T22:48:47.267Z",
+      "folderId": "uncategorized",
+      "relativePath": "tom-holland.jpg"
+    },
+    {
+      "id": "topz",
+      "name": "Topz",
+      "imageUrl": "/uploads/guess-who-library/topz.jpg",
+      "fileName": "topz.jpg",
+      "createdAt": "2026-07-04T22:48:47.268Z",
+      "folderId": "uncategorized",
+      "relativePath": "topz.jpg"
+    },
+    {
+      "id": "triple-h",
+      "name": "Triple H",
+      "imageUrl": "/uploads/guess-who-library/triple-h.jpg",
+      "fileName": "triple-h.jpg",
+      "createdAt": "2026-07-04T22:48:47.269Z",
+      "folderId": "uncategorized",
+      "relativePath": "triple-h.jpg"
+    },
+    {
+      "id": "vikkstar",
+      "name": "Vikkstar",
+      "imageUrl": "/uploads/guess-who-library/vikkstar.jpg",
+      "fileName": "vikkstar.jpg",
+      "createdAt": "2026-07-04T22:48:47.269Z",
+      "folderId": "uncategorized",
+      "relativePath": "vikkstar.jpg"
+    },
+    {
+      "id": "vince-mcmahon",
+      "name": "Vince Mcmahon",
+      "imageUrl": "/uploads/guess-who-library/vince-mcmahon.jpg",
+      "fileName": "vince-mcmahon.jpg",
+      "createdAt": "2026-07-04T22:48:47.270Z",
+      "folderId": "uncategorized",
+      "relativePath": "vince-mcmahon.jpg"
+    },
+    {
+      "id": "william-shakespeare",
+      "name": "William Shakespeare",
+      "imageUrl": "/uploads/guess-who-library/william-shakespeare.jpg",
+      "fileName": "william-shakespeare.jpg",
+      "createdAt": "2026-07-04T22:48:47.303Z",
+      "folderId": "uncategorized",
+      "relativePath": "william-shakespeare.jpg"
+    },
+    {
+      "id": "zohran-mamdani",
+      "name": "Zohran Mamdani",
+      "imageUrl": "/uploads/guess-who-library/zohran-mamdani.jpg",
+      "fileName": "zohran-mamdani.jpg",
+      "createdAt": "2026-07-04T22:48:47.271Z",
+      "folderId": "uncategorized",
+      "relativePath": "zohran-mamdani.jpg"
+    },
+    {
+      "id": "character-db1a073bd9",
+      "name": "أحمد الشقيري",
+      "imageUrl": "/uploads/guess-who-library/character-db1a073bd9.jpg",
+      "fileName": "character-db1a073bd9.jpg",
+      "createdAt": "2026-07-04T22:48:47.273Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-db1a073bd9.jpg"
+    },
+    {
+      "id": "character-d9d1e78ec7",
+      "name": "ابن سينا",
+      "imageUrl": "/uploads/guess-who-library/character-d9d1e78ec7.jpg",
+      "fileName": "character-d9d1e78ec7.jpg",
+      "createdAt": "2026-07-04T22:48:47.304Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-d9d1e78ec7.jpg"
+    },
+    {
+      "id": "character-fb65f0da0b",
+      "name": "الشيخ زايد",
+      "imageUrl": "/uploads/guess-who-library/character-fb65f0da0b.jpg",
+      "fileName": "character-fb65f0da0b.jpg",
+      "createdAt": "2026-07-04T22:48:47.305Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-fb65f0da0b.jpg"
+    },
+    {
+      "id": "character-8c864d3494",
+      "name": "المتنبي",
+      "imageUrl": "/uploads/guess-who-library/character-8c864d3494.png",
+      "fileName": "character-8c864d3494.png",
+      "createdAt": "2026-07-04T22:48:47.306Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-8c864d3494.png"
+    },
+    {
+      "id": "character-91ad60dbce",
+      "name": "بندريتا",
+      "imageUrl": "/uploads/guess-who-library/character-91ad60dbce.jpg",
+      "fileName": "character-91ad60dbce.jpg",
+      "createdAt": "2026-07-04T22:48:47.273Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-91ad60dbce.jpg"
+    },
+    {
+      "id": "character-91af5aa95f",
+      "name": "ثنيان خالد",
+      "imageUrl": "/uploads/guess-who-library/character-91af5aa95f.jpg",
+      "fileName": "character-91af5aa95f.jpg",
+      "createdAt": "2026-07-04T22:48:47.274Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-91af5aa95f.jpg"
+    },
+    {
+      "id": "character-c8769fb963",
+      "name": "جانتي",
+      "imageUrl": "/uploads/guess-who-library/character-c8769fb963.jpg",
+      "fileName": "character-c8769fb963.jpg",
+      "createdAt": "2026-07-04T22:48:47.288Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-c8769fb963.jpg"
+    },
+    {
+      "id": "999",
+      "name": "دحومي 999",
+      "imageUrl": "/uploads/guess-who-library/999.jpg",
+      "fileName": "999.jpg",
+      "createdAt": "2026-07-04T22:48:47.289Z",
+      "folderId": "uncategorized",
+      "relativePath": "999.jpg"
+    },
+    {
+      "id": "character-14bb213024",
+      "name": "سليمان القانوني",
+      "imageUrl": "/uploads/guess-who-library/character-14bb213024.jpg",
+      "fileName": "character-14bb213024.jpg",
+      "createdAt": "2026-07-04T22:48:47.306Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-14bb213024.jpg"
+    },
+    {
+      "id": "character-468d99a99f",
+      "name": "شيف مارون",
+      "imageUrl": "/uploads/guess-who-library/character-468d99a99f.jpg",
+      "fileName": "character-468d99a99f.jpg",
+      "createdAt": "2026-07-04T22:48:47.290Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-468d99a99f.jpg"
+    },
+    {
+      "id": "character-d71c9bb077",
+      "name": "صدام حسين",
+      "imageUrl": "/uploads/guess-who-library/character-d71c9bb077.jpg",
+      "fileName": "character-d71c9bb077.jpg",
+      "createdAt": "2026-07-04T22:48:47.307Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-d71c9bb077.jpg"
+    },
+    {
+      "id": "character-3472b8f8a8",
+      "name": "علاء",
+      "imageUrl": "/uploads/guess-who-library/character-3472b8f8a8.jpg",
+      "fileName": "character-3472b8f8a8.jpg",
+      "createdAt": "2026-07-04T22:48:47.291Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-3472b8f8a8.jpg"
+    },
+    {
+      "id": "character-9c55f83a74",
+      "name": "عمر فاروق",
+      "imageUrl": "/uploads/guess-who-library/character-9c55f83a74.jpg",
+      "fileName": "character-9c55f83a74.jpg",
+      "createdAt": "2026-07-04T22:48:47.292Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-9c55f83a74.jpg"
+    },
+    {
+      "id": "character-8a33a70026",
+      "name": "فهد سال",
+      "imageUrl": "/uploads/guess-who-library/character-8a33a70026.jpg",
+      "fileName": "character-8a33a70026.jpg",
+      "createdAt": "2026-07-04T22:48:47.293Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-8a33a70026.jpg"
+    },
+    {
+      "id": "character-5053754586",
+      "name": "معمر القذافي",
+      "imageUrl": "/uploads/guess-who-library/character-5053754586.jpg",
+      "fileName": "character-5053754586.jpg",
+      "createdAt": "2026-07-04T22:48:47.308Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-5053754586.jpg"
+    },
+    {
+      "id": "character-82a1857b70",
+      "name": "هنودي اوسوم",
+      "imageUrl": "/uploads/guess-who-library/character-82a1857b70.jpg",
+      "fileName": "character-82a1857b70.jpg",
+      "createdAt": "2026-07-04T22:48:47.293Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-82a1857b70.jpg"
+    },
+    {
+      "id": "character-9c58054d3c",
+      "name": "ياسر عرفات",
+      "imageUrl": "/uploads/guess-who-library/character-9c58054d3c.jpg",
+      "fileName": "character-9c58054d3c.jpg",
+      "createdAt": "2026-07-04T22:48:47.309Z",
+      "folderId": "uncategorized",
+      "relativePath": "character-9c58054d3c.jpg"
+    }
+  ]
+}

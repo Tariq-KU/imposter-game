@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Party Game Hub</title>
+  <title>Cryptic Hub</title>
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     :root {
@@ -252,12 +252,36 @@
     .picker-card.selected { border-color: var(--green); box-shadow: 0 0 0 2px rgba(0,179,126,0.22); }
     .picker-card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--panel-2); }
     .picker-card .name { padding: 6px; font-weight: 800; font-size: 12px; min-height: 38px; display: flex; align-items: center; justify-content: center; unicode-bidi: plaintext; }
+    .picker-card .folder-name { color: var(--muted); font-size: 10px; padding: 0 6px 6px; min-height: 18px; unicode-bidi: plaintext; }
+    .folder-checkbox-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+      background: var(--bg);
+      border: 1px solid var(--panel-2);
+      border-radius: 12px;
+      padding: 10px;
+      margin: 8px 0 12px;
+      text-align: left;
+      max-height: 170px;
+      overflow-y: auto;
+    }
+    .folder-checkbox-grid label { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; cursor: pointer; }
+    .folder-checkbox-grid input { width: auto; margin: 0; }
+    .folder-admin-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .folder-admin-row button { width: auto; min-width: 72px; margin: 0; padding: 8px; font-size: 13px; }
+    .folder-admin-row .folder-title { font-weight: 900; color: #fff; unicode-bidi: plaintext; }
+    .folder-admin-row .folder-meta { color: var(--muted); font-size: 12px; }
+    .library-browser-tools { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    @media (min-width: 680px) { .library-browser-tools { grid-template-columns: minmax(180px, 280px) 1fr; align-items: center; } }
+    .library-browser-grid { max-height: 300px; }
     .inline-checkbox { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--text); }
     .inline-checkbox input { width: auto; margin: 0; }
     .admin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-top: 14px; }
     .admin-card { background: var(--bg); border: 1px solid var(--panel-2); border-radius: 12px; overflow: hidden; text-align: center; }
     .admin-card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--panel-2); }
-    .admin-card .name { padding: 8px; font-weight: 800; font-size: 13px; min-height: 44px; unicode-bidi: plaintext; }
+    .admin-card .name { padding: 8px 8px 2px; font-weight: 800; font-size: 13px; min-height: 36px; unicode-bidi: plaintext; }
+    .admin-card .folder-name { color: var(--muted); font-size: 11px; padding: 0 8px 8px; min-height: 20px; unicode-bidi: plaintext; }
     .admin-card button { border-radius: 0; margin: 0; font-size: 13px; padding: 8px; }
     @media (max-width: 760px) {
       body { padding: 6px; }
@@ -277,7 +301,7 @@
   <div id="app-card" class="app-card narrow">
     <!-- Game selection -->
     <div id="game-select-screen" class="screen">
-      <h1>Party Game Hub</h1>
+      <h1>Cryptic Hub</h1>
       <p class="subtitle">Choose a game mode and start a private room with your friends.</p>
       <div class="game-choice-grid">
         <div class="game-choice">
@@ -361,7 +385,7 @@
       <div id="reveal-banner" class="hidden reveal-banner">
         <h3 style="margin: 0;">The Imposter Was:</h3>
         <h2 id="revealed-imposter-name" style="margin: 5px 0 0 0; color: #fff;">-</h2>
-        <p style="margin: 10px 0 0 0; font-size: 14px; color:#fff;">Imposter, guess the Crewmate word!</p>
+        <p id="imposter-reveal-message" style="margin: 10px 0 0 0; font-size: 14px; color:#fff;">Imposter, guess the Crewmate word!</p>
       </div>
 
       <p id="game-instructions" style="font-size: 14px; color: var(--muted); margin-top: 30px;">Discuss your words!</p>
@@ -432,6 +456,8 @@
           </select>
 
           <div id="gw-random-options">
+            <p class="small-note">Randomize from these folder(s):</p>
+            <div id="gw-random-folder-options" class="folder-checkbox-grid"></div>
             <label class="inline-checkbox"><input type="checkbox" id="gw-auto-fit" checked> Auto-fit board to both players' screens</label>
             <label for="gw-board-size">Characters if auto-fit is off</label>
             <input type="number" id="gw-board-size" min="6" max="60" value="24">
@@ -440,6 +466,8 @@
 
           <div id="gw-manual-options" class="hidden">
             <p class="small-note">Choose exactly which saved characters should appear on this board.</p>
+            <p class="small-note">Filter manual picker by folder(s):</p>
+            <div id="gw-manual-folder-options" class="folder-checkbox-grid"></div>
             <div class="picker-tools">
               <input type="search" id="gw-character-search" placeholder="Search characters...">
               <button id="gw-select-visible-btn" type="button" class="secondary-btn">Select Visible</button>
@@ -453,6 +481,18 @@
           <button id="gw-start-round-btn" class="purple-btn">Start Character Selection</button>
           <button id="gw-reset-scores-btn" class="secondary-btn">Reset Guess Who Scores</button>
         </div>
+      </div>
+      <div class="panel" style="margin-top: 16px;">
+        <div class="top-bar">
+          <h3>Browse Character Library</h3>
+          <span id="gw-lobby-browser-count" class="pill gray">0</span>
+        </div>
+        <p class="small-note">Both players can look through the available folders while waiting so everyone knows what characters may appear.</p>
+        <div class="library-browser-tools">
+          <select id="gw-lobby-folder-filter"></select>
+          <input type="search" id="gw-lobby-library-search" placeholder="Search visible characters...">
+        </div>
+        <div id="gw-lobby-library-grid" class="character-picker-grid library-browser-grid"></div>
       </div>
       <div id="gw-lobby-error" class="error"></div>
       <button id="gw-leave-lobby-btn" class="danger-btn">Leave Guess Who Room</button>
@@ -504,7 +544,7 @@
               <label class="inline-checkbox"><input type="checkbox" id="gw-next-auto-fit" checked> Auto-fit next random board</label>
               <label for="gw-next-board-size">Next board size if auto-fit is off</label>
               <input type="number" id="gw-next-board-size" min="6" max="60" value="24">
-              <p class="small-note">Next Round randomizes again. Return to lobby if you want to manually choose a new board.</p>
+              <p class="small-note">Next Round randomizes again using the same selected folders when available. Return to lobby if you want to choose different folders or a manual board.</p>
               <div class="button-row two">
                 <button id="gw-next-round-btn" class="purple-btn">Save Points & Next Round</button>
                 <button id="gw-return-lobby-btn" class="secondary-btn">Save Points & Lobby</button>
@@ -524,19 +564,36 @@
       <div class="panel">
         <label for="admin-password-input">Admin upload password</label>
         <input type="password" id="admin-password-input" placeholder="ADMIN_UPLOAD_PASSWORD">
+        <div class="button-row two">
+          <input type="text" id="admin-new-folder-name" placeholder="New folder name, e.g. Football Players">
+          <button id="admin-create-folder-btn" class="secondary-btn" type="button">Create Folder</button>
+        </div>
+        <label for="admin-active-folder-select">Upload into folder</label>
+        <select id="admin-active-folder-select"></select>
         <label for="admin-file-input">Upload images</label>
-        <input type="file" id="admin-file-input" accept="image/png,image/jpeg,image/webp" multiple>
+        <input type="file" id="admin-file-input" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" multiple>
         <label for="admin-folder-input">Or upload a folder of images</label>
-        <input type="file" id="admin-folder-input" accept="image/png,image/jpeg,image/webp" webkitdirectory multiple>
+        <input type="file" id="admin-folder-input" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" webkitdirectory multiple>
         <button id="admin-upload-btn" class="purple-btn">Upload Selected Images</button>
-        <p class="small-note">Names are read from filenames. Example: <b>robert-downey-jr.webp</b> becomes <b>Robert Downey Jr</b>.</p>
+        <p class="small-note">Names are read from filenames. Example: <b>robert-downey-jr.webp</b> becomes <b>Robert Downey Jr</b>. Uploads go into the selected folder.</p>
         <div id="admin-status" class="success"></div>
         <div id="admin-error" class="error"></div>
       </div>
       <div class="panel" style="margin-top: 16px;">
         <div class="top-bar">
+          <h3>Folders</h3>
+          <span id="admin-folder-count" class="pill gray">0</span>
+        </div>
+        <div id="admin-folder-list"></div>
+      </div>
+      <div class="panel" style="margin-top: 16px;">
+        <div class="top-bar">
           <h3>Saved Characters</h3>
           <span id="admin-library-count" class="pill gray">0</span>
+        </div>
+        <div class="library-browser-tools">
+          <select id="admin-library-folder-filter"></select>
+          <input type="search" id="admin-library-search" placeholder="Search saved characters...">
         </div>
         <div id="admin-library-grid" class="admin-grid"></div>
       </div>
