@@ -51,7 +51,12 @@ function showScreen(screenId, wide = false) {
   screens.forEach(screen => screen.classList.add('hidden'));
   const screen = document.getElementById(screenId);
   if (screen) screen.classList.remove('hidden');
-  appCard.classList.toggle('narrow', !wide);
+
+  const isGameSelect = screenId === 'game-select-screen';
+  const shouldUseWideCard = wide || isGameSelect;
+
+  appCard.classList.toggle('home-card', isGameSelect);
+  appCard.classList.toggle('narrow', !shouldUseWideCard);
   appCard.classList.toggle('guesswho-play-layout', ['gw-selection-screen', 'gw-game-screen'].includes(screenId));
 
   if (['gw-lobby-screen', 'gw-selection-screen', 'gw-game-screen'].includes(screenId)) {

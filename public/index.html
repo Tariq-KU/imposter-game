@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cryptic Hub</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="/favicon.png">
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     :root {
@@ -293,15 +295,154 @@
       .guesswho-play-layout .secret-card { padding: 6px; gap: 8px; }
       .guesswho-play-layout .secret-card img { width: 54px; height: 54px; }
     }
+
+    .home-card {
+      max-width: min(1120px, calc(100vw - 40px));
+    }
+    #game-select-screen {
+      width: 100%;
+    }
+    .main-logo {
+      display: block;
+      width: min(360px, 85vw);
+      height: auto;
+      object-fit: contain;
+      margin: 0 auto 24px;
+    }
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    @media (min-width: 820px) {
+      .home-card {
+        min-height: min(640px, calc(100svh - 40px));
+        display: flex;
+        align-items: center;
+      }
+      #game-select-screen {
+        display: grid;
+        grid-template-columns: minmax(320px, 0.95fr) minmax(360px, 1.05fr);
+        grid-template-areas:
+          "logo intro"
+          "logo choices"
+          "logo admin";
+        column-gap: clamp(24px, 4vw, 60px);
+        row-gap: 14px;
+        align-items: center;
+        text-align: left;
+      }
+      #game-select-screen .main-logo {
+        grid-area: logo;
+        width: min(460px, 42vw);
+        max-height: min(540px, calc(100svh - 110px));
+        margin: 0 auto;
+      }
+      #game-select-screen .subtitle {
+        grid-area: intro;
+        margin: 0;
+        font-size: clamp(16px, 1.35vw, 19px);
+      }
+      #game-select-screen .game-choice-grid {
+        grid-area: choices;
+        grid-template-columns: 1fr;
+        gap: 12px;
+        margin-top: 0;
+      }
+      #game-select-screen .game-choice {
+        min-height: 0;
+        padding: clamp(16px, 2vw, 22px);
+      }
+      #game-select-screen .game-choice p {
+        margin-bottom: 14px;
+      }
+      #game-select-screen .admin-link {
+        grid-area: admin;
+        margin-top: 0;
+      }
+    }
+    @media (max-width: 819px) {
+      .home-card {
+        width: 100%;
+        max-width: min(520px, calc(100vw - 12px));
+        min-height: calc(100svh - 12px);
+        padding: clamp(12px, 4vw, 18px);
+        display: flex;
+        align-items: stretch;
+      }
+      #game-select-screen {
+        min-height: calc(100svh - 48px);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      #game-select-screen .main-logo {
+        width: min(330px, 88vw);
+        max-height: 38svh;
+        margin: 0 auto 6px;
+      }
+      #game-select-screen .subtitle {
+        margin: 0 0 8px;
+        font-size: 14px;
+        line-height: 1.35;
+      }
+      #game-select-screen .game-choice-grid {
+        width: 100%;
+        gap: 8px;
+        margin-top: auto;
+      }
+      #game-select-screen .game-choice {
+        min-height: 0;
+        padding: 12px;
+      }
+      #game-select-screen .game-choice h2 {
+        font-size: 20px;
+        margin-bottom: 3px;
+      }
+      #game-select-screen .game-choice p {
+        font-size: 13px;
+        line-height: 1.35;
+        margin: 0 0 8px;
+      }
+      #game-select-screen .game-choice button,
+      #game-select-screen .admin-link {
+        padding: 10px;
+        margin: 6px 0;
+        font-size: 15px;
+      }
+      #game-select-screen .admin-link {
+        margin-top: 8px;
+      }
+    }
+    @media (max-width: 420px) and (max-height: 700px) {
+      #game-select-screen .main-logo {
+        max-height: 32svh;
+        width: min(285px, 84vw);
+      }
+      #game-select-screen .subtitle {
+        font-size: 13px;
+      }
+      #game-select-screen .game-choice p {
+        display: none;
+      }
+    }
     .small-note { font-size: 13px; color: var(--muted); margin: 6px 0; }
     @keyframes pop { 0% { transform: scale(0.96); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
   </style>
 </head>
 <body>
-  <div id="app-card" class="app-card narrow">
+  <div id="app-card" class="app-card home-card">
     <!-- Game selection -->
     <div id="game-select-screen" class="screen">
-      <h1>Cryptic Hub</h1>
+      <img src="/cryptic-hub-logo-transparent.png" alt="Cryptic Hub Logo" class="main-logo">
+      <h1 class="visually-hidden">Cryptic Hub</h1>
       <p class="subtitle">Choose a game mode and start a private room with your friends.</p>
       <div class="game-choice-grid">
         <div class="game-choice">
