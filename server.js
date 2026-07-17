@@ -36,6 +36,8 @@ const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, 'data');
 const GUESS_WHO_LIBRARY_FILE = path.join(DATA_DIR, 'guess-who-characters.json');
 const GUESS_WHO_LIBRARY_DIR = path.join(__dirname, 'public', 'uploads', 'guess-who-library');
+const DEFAULT_GUESS_WHO_FOLDER_ID = 'uncategorized';
+const DEFAULT_GUESS_WHO_FOLDER_NAME = 'Uncategorized';
 
 function ensureDirectorySync(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -44,7 +46,7 @@ function ensureDirectorySync(dir) {
 ensureDirectorySync(DATA_DIR);
 ensureDirectorySync(GUESS_WHO_LIBRARY_DIR);
 if (!fs.existsSync(GUESS_WHO_LIBRARY_FILE)) {
-  fs.writeFileSync(GUESS_WHO_LIBRARY_FILE, '[]', 'utf8');
+  fs.writeFileSync(GUESS_WHO_LIBRARY_FILE, JSON.stringify({ folders: [{ id: DEFAULT_GUESS_WHO_FOLDER_ID, name: DEFAULT_GUESS_WHO_FOLDER_NAME, createdAt: new Date().toISOString() }], characters: [] }, null, 2), 'utf8');
 }
 
 app.use(express.json({ limit: '1mb' }));
@@ -300,7 +302,9 @@ function buildPlayerGameState(room, playerId) {
     mode,
     selectedCategories: room.gameOptions.selectedCategories,
     imposterRevealed,
-    imposterNames: imposterRevealed ? room.imposters.map(i => i.name).join(' & ') : null
+    imposterNames: imposterRevealed ? room.imposters.map(i => i.name).join(' & ') : null,
+    isCurrentPlayerImposter: imposterRevealed ? isImposter : false,
+    revealedCrewmateWord: imposterRevealed && isImposter ? crewmateWord : null
   };
 }
 
@@ -430,24 +434,162 @@ function requireAdminPassword(req, res, next) {
   next();
 }
 
-async function readGuessWhoLibrary() {
+function createDefaultGuessWhoFolder() {
+  return {
+    id: DEFAULT_GUESS_WHO_FOLDER_ID,
+    name: DEFAULT_GUESS_WHO_FOLDER_NAME,
+    createdAt: new Date().toISOString()
+  };
+}
+
+function publicGuessWhoFolder(folder, characters = []) {
+  const characterCount = characters.filter(character => character.folderId === folder.id).length;
+  return {
+    id: folder.id,
+    name: normalizeCharacterDisplayName(folder.name),
+    characterCount
+  };
+}
+
+function normalizeGuessWhoLibraryData(rawData) {
+  let folders = [];
+  let characters = [];
+
+  if (Array.isArray(rawData)) {
+    folders = [createDefaultGuessWhoFolder()];
+    characters = rawData.map(character => ({
+      ...character,
+      folderId: character.folderId || DEFAULT_GUESS_WHO_FOLDER_ID
+    }));
+  } else if (rawData && typeof rawData === 'object') {
+    folders = Array.isArray(rawData.folders) ? rawData.folders : [];
+    characters = Array.isArray(rawData.characters) ? rawData.characters : [];
+  }
+
+  const folderMap = new Map();
+  folders.forEach(folder => {
+    const name = normalizeCharacterDisplayName(folder?.name || DEFAULT_GUESS_WHO_FOLDER_NAME);
+    const baseId = slugify(folder?.id || name || DEFAULT_GUESS_WHO_FOLDER_ID);
+    const id = baseId || DEFAULT_GUESS_WHO_FOLDER_ID;
+
+    if (!folderMap.has(id)) {
+      folderMap.set(id, {
+        id,
+        name,
+        createdAt: folder?.createdAt || new Date().toISOString()
+      });
+    }
+  });
+
+  if (!folderMap.has(DEFAULT_GUESS_WHO_FOLDER_ID)) {
+    folderMap.set(DEFAULT_GUESS_WHO_FOLDER_ID, createDefaultGuessWhoFolder());
+  }
+
+  const normalizedFolders = [...folderMap.values()].sort((a, b) => {
+    if (a.id === DEFAULT_GUESS_WHO_FOLDER_ID) return -1;
+    if (b.id === DEFAULT_GUESS_WHO_FOLDER_ID) return 1;
+    return normalizeCharacterDisplayName(a.name).localeCompare(
+      normalizeCharacterDisplayName(b.name),
+      undefined,
+      { sensitivity: 'base' }
+    );
+  });
+
+  const folderIds = new Set(normalizedFolders.map(folder => folder.id));
+  const characterIds = new Set();
+  const normalizedCharacters = [];
+
+  characters.forEach(character => {
+    const originalId = String(character?.id || '').trim();
+    const name = normalizeCharacterDisplayName(character?.name || originalId || 'Unknown Character');
+    const baseId = slugify(originalId || name);
+    const id = uniqueId(baseId, characterIds);
+    const folderId = folderIds.has(character?.folderId) ? character.folderId : DEFAULT_GUESS_WHO_FOLDER_ID;
+
+    normalizedCharacters.push({
+      ...character,
+      id,
+      name,
+      folderId,
+      imageUrl: character?.imageUrl || '',
+      fileName: character?.fileName || '',
+      relativePath: character?.relativePath || character?.fileName || '',
+      createdAt: character?.createdAt || new Date().toISOString()
+    });
+  });
+
+  return {
+    folders: normalizedFolders,
+    characters: normalizedCharacters
+  };
+}
+
+async function readGuessWhoLibraryData() {
   try {
     const raw = await fsp.readFile(GUESS_WHO_LIBRARY_FILE, 'utf8');
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    return normalizeGuessWhoLibraryData(parsed);
   } catch (error) {
-    return [];
+    return normalizeGuessWhoLibraryData({ folders: [createDefaultGuessWhoFolder()], characters: [] });
   }
 }
 
+async function writeGuessWhoLibraryData(libraryData) {
+  const normalized = normalizeGuessWhoLibraryData(libraryData);
+  const folderNameById = new Map(normalized.folders.map(folder => [folder.id, folder.name]));
+
+  const sortedCharacters = [...normalized.characters].sort((a, b) => {
+    const folderCompare = normalizeCharacterDisplayName(folderNameById.get(a.folderId) || '').localeCompare(
+      normalizeCharacterDisplayName(folderNameById.get(b.folderId) || ''),
+      undefined,
+      { sensitivity: 'base' }
+    );
+
+    if (folderCompare !== 0) return folderCompare;
+
+    return normalizeCharacterDisplayName(a.name).localeCompare(
+      normalizeCharacterDisplayName(b.name),
+      undefined,
+      { sensitivity: 'base' }
+    );
+  });
+
+  const dataToSave = {
+    folders: normalized.folders,
+    characters: sortedCharacters
+  };
+
+  await fsp.writeFile(GUESS_WHO_LIBRARY_FILE, JSON.stringify(dataToSave, null, 2), 'utf8');
+  return dataToSave;
+}
+
+async function readGuessWhoLibrary() {
+  const libraryData = await readGuessWhoLibraryData();
+  return libraryData.characters;
+}
+
 async function writeGuessWhoLibrary(characters) {
-  const sorted = [...characters].sort((a, b) => normalizeCharacterDisplayName(a.name).localeCompare(
-    normalizeCharacterDisplayName(b.name),
-    undefined,
-    { sensitivity: 'base' }
-  ));
-  await fsp.writeFile(GUESS_WHO_LIBRARY_FILE, JSON.stringify(sorted, null, 2), 'utf8');
-  return sorted;
+  const existing = await readGuessWhoLibraryData();
+  const saved = await writeGuessWhoLibraryData({
+    folders: existing.folders,
+    characters
+  });
+  return saved.characters;
+}
+
+function buildGuessWhoLibraryPayload(libraryData) {
+  const normalized = normalizeGuessWhoLibraryData(libraryData);
+  const folderNameById = new Map(normalized.folders.map(folder => [folder.id, folder.name]));
+
+  const publicCharacters = normalized.characters.map(character => publicGuessWhoCharacter({
+    ...character,
+    folderName: folderNameById.get(character.folderId) || DEFAULT_GUESS_WHO_FOLDER_NAME
+  }));
+
+  return {
+    folders: normalized.folders.map(folder => publicGuessWhoFolder(folder, normalized.characters)),
+    characters: publicCharacters
+  };
 }
 
 function decodeLikelyMojibake(text) {
@@ -526,13 +668,88 @@ function publicGuessWhoCharacter(character) {
   return {
     id: character.id,
     name: normalizeCharacterDisplayName(character.name),
-    imageUrl: character.imageUrl
+    imageUrl: character.imageUrl,
+    folderId: character.folderId || DEFAULT_GUESS_WHO_FOLDER_ID,
+    folderName: normalizeCharacterDisplayName(character.folderName || DEFAULT_GUESS_WHO_FOLDER_NAME)
   };
 }
 
 app.get('/api/guess-who/characters', async (req, res) => {
-  const characters = await readGuessWhoLibrary();
-  res.json({ characters: characters.map(publicGuessWhoCharacter) });
+  const libraryData = await readGuessWhoLibraryData();
+  res.json(buildGuessWhoLibraryPayload(libraryData));
+});
+
+app.post('/api/admin/guess-who/folders', requireAdminPassword, async (req, res) => {
+  const name = normalizeCharacterDisplayName(req.body?.name || '');
+  if (!name) return res.status(400).json({ message: 'Enter a folder name.' });
+
+  const libraryData = await readGuessWhoLibraryData();
+  const existingIds = new Set(libraryData.folders.map(folder => folder.id));
+  const id = uniqueId(slugify(name), existingIds);
+
+  libraryData.folders.push({
+    id,
+    name,
+    createdAt: new Date().toISOString()
+  });
+
+  const saved = await writeGuessWhoLibraryData(libraryData);
+  res.json(buildGuessWhoLibraryPayload(saved));
+});
+
+app.patch('/api/admin/guess-who/folders/:id', requireAdminPassword, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  const name = normalizeCharacterDisplayName(req.body?.name || '');
+
+  if (!name) return res.status(400).json({ message: 'Enter a new folder name.' });
+
+  const libraryData = await readGuessWhoLibraryData();
+  const folder = libraryData.folders.find(item => item.id === id);
+  if (!folder) return res.status(404).json({ message: 'Folder not found.' });
+
+  folder.name = name;
+  folder.updatedAt = new Date().toISOString();
+
+  const saved = await writeGuessWhoLibraryData(libraryData);
+  res.json(buildGuessWhoLibraryPayload(saved));
+});
+
+async function removeGuessWhoCharacterFile(character) {
+  const relativePath = character.relativePath || character.fileName;
+  if (!relativePath) return;
+
+  const safeLibraryDir = path.resolve(GUESS_WHO_LIBRARY_DIR);
+  const storedPath = path.resolve(GUESS_WHO_LIBRARY_DIR, relativePath);
+  if (storedPath.startsWith(`${safeLibraryDir}${path.sep}`)) {
+    await fsp.rm(storedPath, { force: true });
+  }
+}
+
+app.delete('/api/admin/guess-who/folders/:id', requireAdminPassword, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  const libraryData = await readGuessWhoLibraryData();
+  const folder = libraryData.folders.find(item => item.id === id);
+
+  if (!folder) return res.status(404).json({ message: 'Folder not found.' });
+  if (id === DEFAULT_GUESS_WHO_FOLDER_ID) {
+    return res.status(400).json({ message: 'The Uncategorized folder cannot be deleted.' });
+  }
+  if (libraryData.folders.length <= 1) {
+    return res.status(400).json({ message: 'Create another folder before deleting the only folder.' });
+  }
+
+  const charactersToDelete = libraryData.characters.filter(character => character.folderId === id);
+  libraryData.characters = libraryData.characters.filter(character => character.folderId !== id);
+  libraryData.folders = libraryData.folders.filter(item => item.id !== id);
+
+  for (const character of charactersToDelete) {
+    await removeGuessWhoCharacterFile(character);
+  }
+
+  await fsp.rm(path.join(GUESS_WHO_LIBRARY_DIR, id), { recursive: true, force: true });
+
+  const saved = await writeGuessWhoLibraryData(libraryData);
+  res.json(buildGuessWhoLibraryPayload(saved));
 });
 
 app.post('/api/admin/guess-who/upload', requireAdminPassword, (req, res, next) => {
@@ -557,36 +774,52 @@ app.post('/api/admin/guess-who/upload', requireAdminPassword, (req, res, next) =
       return res.status(400).json({ message: 'Please choose at least one image.' });
     }
 
-    const library = await readGuessWhoLibrary();
-    const existingIds = new Set(library.map(character => character.id));
+    const libraryData = await readGuessWhoLibraryData();
+    const requestedFolderId = String(req.body?.folderId || DEFAULT_GUESS_WHO_FOLDER_ID).trim();
+    const folder = libraryData.folders.find(item => item.id === requestedFolderId)
+      || libraryData.folders.find(item => item.id === DEFAULT_GUESS_WHO_FOLDER_ID)
+      || createDefaultGuessWhoFolder();
+
+    if (!libraryData.folders.some(item => item.id === folder.id)) {
+      libraryData.folders.push(folder);
+    }
+
+    const folderDir = path.join(GUESS_WHO_LIBRARY_DIR, folder.id);
+    ensureDirectorySync(folderDir);
+
+    const existingIds = new Set(libraryData.characters.map(character => character.id));
     const added = [];
 
     for (const file of files) {
       const name = characterNameFromFileName(file.originalname);
-      const baseId = slugify(name);
+      const baseId = slugify(`${folder.id}-${name}`);
       const id = uniqueId(baseId, existingIds);
       const extension = allowedImageMimeTypes.get(file.mimetype);
       const storedFileName = `${id}${extension}`;
-      const storedPath = path.join(GUESS_WHO_LIBRARY_DIR, storedFileName);
+      const relativePath = `${folder.id}/${storedFileName}`;
+      const storedPath = path.join(GUESS_WHO_LIBRARY_DIR, relativePath);
 
       await fsp.writeFile(storedPath, file.buffer);
 
       const character = {
         id,
         name,
-        imageUrl: `/uploads/guess-who-library/${storedFileName}`,
+        folderId: folder.id,
+        imageUrl: `/uploads/guess-who-library/${relativePath}`,
         fileName: storedFileName,
+        relativePath,
         createdAt: new Date().toISOString()
       };
 
-      library.push(character);
-      added.push(publicGuessWhoCharacter(character));
+      libraryData.characters.push(character);
+      added.push(publicGuessWhoCharacter({ ...character, folderName: folder.name }));
     }
 
-    const saved = await writeGuessWhoLibrary(library);
+    const saved = await writeGuessWhoLibraryData(libraryData);
+    const payload = buildGuessWhoLibraryPayload(saved);
     res.json({
       added,
-      characters: saved.map(publicGuessWhoCharacter)
+      ...payload
     });
   } catch (error) {
     console.error('Guess Who upload failed:', error);
@@ -598,25 +831,19 @@ app.post('/api/admin/guess-who/upload', requireAdminPassword, (req, res, next) =
 
 app.delete('/api/admin/guess-who/characters/:id', requireAdminPassword, async (req, res) => {
   const id = String(req.params.id || '');
-  const library = await readGuessWhoLibrary();
-  const character = library.find(item => item.id === id);
+  const libraryData = await readGuessWhoLibraryData();
+  const character = libraryData.characters.find(item => item.id === id);
 
   if (!character) {
     return res.status(404).json({ message: 'Character not found.' });
   }
 
-  const remaining = library.filter(item => item.id !== id);
-  await writeGuessWhoLibrary(remaining);
+  libraryData.characters = libraryData.characters.filter(item => item.id !== id);
+  await writeGuessWhoLibraryData(libraryData);
+  await removeGuessWhoCharacterFile(character);
 
-  if (character.fileName) {
-    const storedPath = path.resolve(GUESS_WHO_LIBRARY_DIR, character.fileName);
-    const safeLibraryDir = path.resolve(GUESS_WHO_LIBRARY_DIR);
-    if (storedPath.startsWith(`${safeLibraryDir}${path.sep}`)) {
-      await fsp.rm(storedPath, { force: true });
-    }
-  }
-
-  res.json({ characters: remaining.map(publicGuessWhoCharacter) });
+  const saved = await readGuessWhoLibraryData();
+  res.json(buildGuessWhoLibraryPayload(saved));
 });
 
 // --------------------------
@@ -821,8 +1048,35 @@ function getSelectedGuessWhoCharacters(library, selectedCharacterIds) {
   return selected;
 }
 
+function getGuessWhoRandomSourceCharacters(libraryData, selectedFolderIds) {
+  const library = libraryData.characters;
+  const validFolderIds = new Set(libraryData.folders.map(folder => folder.id));
+
+  if (!Array.isArray(selectedFolderIds)) {
+    return {
+      selectedFolderIds: libraryData.folders.map(folder => folder.id),
+      characters: library
+    };
+  }
+
+  const cleanFolderIds = [...new Set(selectedFolderIds
+    .map(id => String(id || '').trim())
+    .filter(id => validFolderIds.has(id)))];
+
+  if (cleanFolderIds.length === 0) {
+    throw new Error('Select at least one character folder for the random board.');
+  }
+
+  const folderIdSet = new Set(cleanFolderIds);
+  return {
+    selectedFolderIds: cleanFolderIds,
+    characters: library.filter(character => folderIdSet.has(character.folderId || DEFAULT_GUESS_WHO_FOLDER_ID))
+  };
+}
+
 async function prepareGuessWhoRound(room, options = {}) {
-  const library = await readGuessWhoLibrary();
+  const libraryData = await readGuessWhoLibraryData();
+  const library = libraryData.characters;
   if (library.length < GUESS_WHO_MIN_CHARACTERS) {
     throw new Error(`Upload at least ${GUESS_WHO_MIN_CHARACTERS} Guess Who characters before starting.`);
   }
@@ -840,13 +1094,21 @@ async function prepareGuessWhoRound(room, options = {}) {
       throw new Error(`Please select ${GUESS_WHO_MAX_BOARD_SIZE} characters or fewer.`);
     }
 
+    room.selectedFolderIds = [];
     room.board = selectedCharacters.map(publicGuessWhoCharacter);
   } else {
-    const size = options.autoFit
-      ? getAutoGuessWhoBoardSize(room, library.length)
-      : clampGuessWhoBoardSize(options.boardSize, library.length);
+    const source = getGuessWhoRandomSourceCharacters(libraryData, options.selectedFolderIds);
 
-    room.board = sampleCharacters(library, size);
+    if (source.characters.length < GUESS_WHO_MIN_CHARACTERS) {
+      throw new Error(`The selected folder(s) only have ${source.characters.length} character(s). Select folders with at least ${GUESS_WHO_MIN_CHARACTERS} total characters.`);
+    }
+
+    const size = options.autoFit
+      ? getAutoGuessWhoBoardSize(room, source.characters.length)
+      : clampGuessWhoBoardSize(options.boardSize, source.characters.length);
+
+    room.selectedFolderIds = source.selectedFolderIds;
+    room.board = sampleCharacters(source.characters, size);
   }
 
   room.status = 'selecting';
@@ -1006,7 +1268,17 @@ io.on('connection', (socket) => {
 
     room.currentRound.imposterRevealed = true;
     const imposterNames = room.imposters.map(i => i.name).join(' & ');
-    io.to(code).emit('imposterRevealed', imposterNames);
+
+    room.players.forEach(player => {
+      if (player.offline) return;
+
+      const isImposter = room.imposters.some(imposter => imposter.playerId === player.playerId);
+      io.to(player.id).emit('imposterRevealed', {
+        imposterNames,
+        isCurrentPlayerImposter: isImposter,
+        crewmateWord: isImposter ? room.currentRound.crewmateWord : null
+      });
+    });
   });
 
   socket.on('resetScores', (roomCode) => {
@@ -1101,6 +1373,7 @@ io.on('connection', (socket) => {
       board: [],
       messages: [],
       roundId: 0,
+      selectedFolderIds: [],
       createdAt: Date.now()
     };
 
@@ -1148,7 +1421,7 @@ io.on('connection', (socket) => {
     emitGuessWhoState(code);
   });
 
-  socket.on('gwStartSelection', async ({ roomCode, boardSize, autoFit, selectionMode, selectedCharacterIds } = {}) => {
+  socket.on('gwStartSelection', async ({ roomCode, boardSize, autoFit, selectionMode, selectedCharacterIds, selectedFolderIds } = {}) => {
     const code = normalizeRoomCode(roomCode);
     const room = guessWhoRooms[code];
     if (!room) return;
@@ -1166,7 +1439,7 @@ io.on('connection', (socket) => {
     }
 
     try {
-      await prepareGuessWhoRound(room, { boardSize, autoFit, selectionMode, selectedCharacterIds });
+      await prepareGuessWhoRound(room, { boardSize, autoFit, selectionMode, selectedCharacterIds, selectedFolderIds });
       emitGuessWhoState(code);
     } catch (error) {
       socket.emit('gwErrorMsg', error.message || 'Could not start Guess Who.');
@@ -1257,7 +1530,12 @@ io.on('connection', (socket) => {
     awardGuessWhoPoints(room, pointsData);
 
     try {
-      await prepareGuessWhoRound(room, { boardSize, autoFit, selectionMode: 'random' });
+      await prepareGuessWhoRound(room, {
+        boardSize,
+        autoFit,
+        selectionMode: 'random',
+        selectedFolderIds: Array.isArray(room.selectedFolderIds) && room.selectedFolderIds.length > 0 ? room.selectedFolderIds : undefined
+      });
       emitGuessWhoState(code);
     } catch (error) {
       socket.emit('gwErrorMsg', error.message || 'Could not start the next Guess Who round.');

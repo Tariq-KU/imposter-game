@@ -36,8 +36,12 @@ let guessWhoSelectedCharacterId = '';
 let guessWhoEliminated = new Set();
 let guessWhoLibraryCount = 0;
 let guessWhoLibrary = [];
+let guessWhoFolders = [];
 let guessWhoManualSelected = new Set();
 let guessWhoLibraryFilter = '';
+let guessWhoRandomFolderSelected = new Set();
+let guessWhoManualFolderFilterSelected = new Set();
+let guessWhoLobbyFolderFilter = 'all';
 let viewportUpdateTimer = null;
 
 const appCard = document.getElementById('app-card');
@@ -165,6 +169,7 @@ const cancelContinueBtn = document.getElementById('cancel-continue-btn');
 const pointInputsContainer = document.getElementById('point-inputs-container');
 const revealBanner = document.getElementById('reveal-banner');
 const revealedImposterName = document.getElementById('revealed-imposter-name');
+const imposterRevealMessage = document.getElementById('imposter-reveal-message');
 const gamePlayerList = document.getElementById('game-player-list');
 const resetScoresBtn = document.getElementById('reset-scores-btn');
 const leaveLobbyBtn = document.getElementById('leave-lobby-btn');
@@ -193,6 +198,12 @@ const gwAutoFitNote = document.getElementById('gw-auto-fit-note');
 const gwBoardSizeInput = document.getElementById('gw-board-size');
 const gwCharacterSearch = document.getElementById('gw-character-search');
 const gwCharacterPicker = document.getElementById('gw-character-picker');
+const gwRandomFolderOptions = document.getElementById('gw-random-folder-options');
+const gwManualFolderOptions = document.getElementById('gw-manual-folder-options');
+const gwLobbyFolderFilter = document.getElementById('gw-lobby-folder-filter');
+const gwLobbyLibrarySearch = document.getElementById('gw-lobby-library-search');
+const gwLobbyLibraryGrid = document.getElementById('gw-lobby-library-grid');
+const gwLobbyBrowserCount = document.getElementById('gw-lobby-browser-count');
 const gwSelectedCount = document.getElementById('gw-selected-count');
 const gwSelectVisibleBtn = document.getElementById('gw-select-visible-btn');
 const gwClearSelectionBtn = document.getElementById('gw-clear-selection-btn');
@@ -229,12 +240,19 @@ const gwLeaveGameBtn = document.getElementById('gw-leave-game-btn');
 // Admin DOM elements
 // --------------------------
 const adminPasswordInput = document.getElementById('admin-password-input');
+const adminNewFolderName = document.getElementById('admin-new-folder-name');
+const adminCreateFolderBtn = document.getElementById('admin-create-folder-btn');
+const adminActiveFolderSelect = document.getElementById('admin-active-folder-select');
 const adminFileInput = document.getElementById('admin-file-input');
 const adminFolderInput = document.getElementById('admin-folder-input');
 const adminUploadBtn = document.getElementById('admin-upload-btn');
 const adminStatus = document.getElementById('admin-status');
 const adminError = document.getElementById('admin-error');
 const adminLibraryCount = document.getElementById('admin-library-count');
+const adminFolderCount = document.getElementById('admin-folder-count');
+const adminFolderList = document.getElementById('admin-folder-list');
+const adminLibraryFolderFilter = document.getElementById('admin-library-folder-filter');
+const adminLibrarySearch = document.getElementById('admin-library-search');
 const adminLibraryGrid = document.getElementById('admin-library-grid');
 
 const savedName = getSavedName();
@@ -630,7 +648,11 @@ function displayActiveGameData(data) {
   }
 
   if (data.imposterRevealed) {
-    showImposterReveal(data.imposterNames);
+    showImposterReveal({
+      imposterNames: data.imposterNames,
+      isCurrentPlayerImposter: data.isCurrentPlayerImposter,
+      crewmateWord: data.revealedCrewmateWord
+    });
   } else {
     revealBanner.classList.add('hidden');
     revealBanner.style.display = 'none';
@@ -642,15 +664,25 @@ function displayActiveGameData(data) {
   }
 }
 
-function showImposterReveal(imposterNames) {
+function showImposterReveal(payload) {
   revealBanner.classList.remove('hidden');
   revealBanner.style.display = 'block';
 
-  const myName = playerNameInput.value.trim() || localStorage.getItem('imposter-playerName');
-  if (myName && imposterNames && imposterNames.includes(myName)) {
+  const revealData = payload && typeof payload === 'object'
+    ? payload
+    : { imposterNames: payload, isCurrentPlayerImposter: false, crewmateWord: null };
+
+  const imposterNames = revealData.imposterNames || '-';
+
+  if (revealData.isCurrentPlayerImposter) {
     revealedImposterName.textContent = `${imposterNames} (That's YOU!)`;
+    setMessage(
+      imposterRevealMessage,
+      revealData.crewmateWord ? `Crewmate word: ${revealData.crewmateWord}` : 'You were the Imposter.'
+    );
   } else {
-    revealedImposterName.textContent = imposterNames || '-';
+    revealedImposterName.textContent = imposterNames;
+    setMessage(imposterRevealMessage, 'The Imposter can now see the Crewmate word.');
   }
 
   revealImposterBtn.classList.add('hidden');
@@ -751,20 +783,64 @@ window.addEventListener('resize', () => {
 // --------------------------
 // Guess Who library/admin
 // --------------------------
-async function getGuessWhoCharacters() {
+async function getGuessWhoLibraryData() {
   const response = await fetch('/api/guess-who/characters');
   if (!response.ok) throw new Error('Could not load Guess Who characters.');
   const data = await response.json();
-  return Array.isArray(data.characters) ? data.characters : [];
+
+  return {
+    characters: Array.isArray(data.characters) ? data.characters : [],
+    folders: Array.isArray(data.folders) ? data.folders : []
+  };
+}
+
+function updateGuessWhoLibraryState(data) {
+  guessWhoLibrary = Array.isArray(data.characters) ? data.characters : [];
+  guessWhoFolders = Array.isArray(data.folders) ? data.folders : [];
+  guessWhoLibraryCount = guessWhoLibrary.length;
+
+  if (guessWhoFolders.length === 0) {
+    guessWhoFolders = [{ id: 'uncategorized', name: 'Uncategorized', characterCount: guessWhoLibrary.length }];
+  }
+
+  const folderIds = new Set(guessWhoFolders.map(folder => folder.id));
+
+  guessWhoRandomFolderSelected = new Set([...guessWhoRandomFolderSelected].filter(id => folderIds.has(id)));
+  guessWhoManualFolderFilterSelected = new Set([...guessWhoManualFolderFilterSelected].filter(id => folderIds.has(id)));
+
+  if (guessWhoRandomFolderSelected.size === 0) {
+    guessWhoFolders.forEach(folder => guessWhoRandomFolderSelected.add(folder.id));
+  }
+
+  if (guessWhoManualFolderFilterSelected.size === 0) {
+    guessWhoFolders.forEach(folder => guessWhoManualFolderFilterSelected.add(folder.id));
+  }
+
+  if (guessWhoLobbyFolderFilter !== 'all' && !folderIds.has(guessWhoLobbyFolderFilter)) {
+    guessWhoLobbyFolderFilter = 'all';
+  }
+
+  const selectedIds = new Set(guessWhoLibrary.map(character => character.id));
+  guessWhoManualSelected = new Set([...guessWhoManualSelected].filter(id => selectedIds.has(id)));
+}
+
+function getFolderById(folderId) {
+  return guessWhoFolders.find(folder => folder.id === folderId) || null;
+}
+
+function getCharacterFolderName(character) {
+  return character.folderName || getFolderById(character.folderId)?.name || 'Uncategorized';
 }
 
 async function refreshGuessWhoLibraryCount() {
   try {
-    guessWhoLibrary = await getGuessWhoCharacters();
-    guessWhoLibraryCount = guessWhoLibrary.length;
+    const data = await getGuessWhoLibraryData();
+    updateGuessWhoLibraryState(data);
     gwLibraryCount.textContent = `${guessWhoLibraryCount} saved Guess Who characters available.`;
-    gwLibraryCountLobby.textContent = `Library count: ${guessWhoLibraryCount}`;
+    gwLibraryCountLobby.textContent = `Library count: ${guessWhoLibraryCount} across ${guessWhoFolders.length} folder(s)`;
+    renderGuessWhoFolderControls();
     renderGuessWhoCharacterPicker();
+    renderGuessWhoLobbyLibraryBrowser();
     updateGuessWhoAutoFitNote();
     return guessWhoLibraryCount;
   } catch (error) {
@@ -774,45 +850,345 @@ async function refreshGuessWhoLibraryCount() {
   }
 }
 
+function renderFolderCheckboxes(container, selectedSet, onChange) {
+  if (!container) return;
+
+  container.innerHTML = '';
+  if (guessWhoFolders.length === 0) {
+    container.appendChild(createElement('p', 'small-note', 'No folders yet. Create folders in the admin page.'));
+    return;
+  }
+
+  guessWhoFolders.forEach(folder => {
+    const label = document.createElement('label');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = selectedSet.has(folder.id);
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) {
+        selectedSet.add(folder.id);
+      } else {
+        selectedSet.delete(folder.id);
+      }
+      if (selectedSet.size === 0) {
+        checkbox.checked = true;
+        selectedSet.add(folder.id);
+        setMessage(gwLobbyError, 'At least one folder must stay selected.');
+      }
+      onChange?.();
+    });
+
+    const text = createElement('span', '', `${folder.name} (${folder.characterCount || 0})`);
+    text.dir = 'auto';
+    label.appendChild(checkbox);
+    label.appendChild(text);
+    container.appendChild(label);
+  });
+}
+
+function renderGuessWhoFolderControls() {
+  renderFolderCheckboxes(gwRandomFolderOptions, guessWhoRandomFolderSelected, () => {
+    setMessage(gwLobbyError, '');
+  });
+
+  renderFolderCheckboxes(gwManualFolderOptions, guessWhoManualFolderFilterSelected, () => {
+    renderGuessWhoCharacterPicker();
+  });
+
+  renderGuessWhoLobbyFolderFilterOptions();
+}
+
+function renderGuessWhoLobbyFolderFilterOptions() {
+  if (!gwLobbyFolderFilter) return;
+
+  gwLobbyFolderFilter.innerHTML = '';
+  const allOption = document.createElement('option');
+  allOption.value = 'all';
+  allOption.textContent = `All folders (${guessWhoLibrary.length})`;
+  gwLobbyFolderFilter.appendChild(allOption);
+
+  guessWhoFolders.forEach(folder => {
+    const option = document.createElement('option');
+    option.value = folder.id;
+    option.textContent = `${folder.name} (${folder.characterCount || 0})`;
+    gwLobbyFolderFilter.appendChild(option);
+  });
+
+  gwLobbyFolderFilter.value = guessWhoLobbyFolderFilter;
+}
+
+function getGuessWhoLobbyVisibleCharacters() {
+  const query = (gwLobbyLibrarySearch?.value || '').trim().toLowerCase();
+  return guessWhoLibrary.filter(character => {
+    const folderMatches = guessWhoLobbyFolderFilter === 'all' || character.folderId === guessWhoLobbyFolderFilter;
+    const queryMatches = !query || character.name.toLowerCase().includes(query) || getCharacterFolderName(character).toLowerCase().includes(query);
+    return folderMatches && queryMatches;
+  });
+}
+
+function renderSmallCharacterCard(character, options = {}) {
+  const card = createElement(options.button ? 'button' : 'div', 'picker-card');
+  if (options.button) card.type = 'button';
+  if (options.selected) card.classList.add('selected');
+
+  const img = document.createElement('img');
+  img.src = character.imageUrl;
+  img.alt = character.name;
+  img.loading = 'lazy';
+
+  const name = createElement('div', 'name', character.name);
+  name.dir = 'auto';
+
+  const folder = createElement('div', 'folder-name', getCharacterFolderName(character));
+  folder.dir = 'auto';
+
+  card.appendChild(img);
+  card.appendChild(name);
+  if (options.showFolder !== false) card.appendChild(folder);
+  return card;
+}
+
+function renderGuessWhoLobbyLibraryBrowser() {
+  if (!gwLobbyLibraryGrid) return;
+
+  const visible = getGuessWhoLobbyVisibleCharacters();
+  gwLobbyLibraryGrid.innerHTML = '';
+  if (gwLobbyBrowserCount) gwLobbyBrowserCount.textContent = `${visible.length}`;
+
+  if (guessWhoLibrary.length === 0) {
+    gwLobbyLibraryGrid.appendChild(createElement('p', 'small-note', 'No characters uploaded yet.'));
+    return;
+  }
+
+  if (visible.length === 0) {
+    gwLobbyLibraryGrid.appendChild(createElement('p', 'small-note', 'No characters match this folder/search.'));
+    return;
+  }
+
+  visible.forEach(character => {
+    gwLobbyLibraryGrid.appendChild(renderSmallCharacterCard(character));
+  });
+}
+
+function renderAdminFolderSelects() {
+  const selects = [adminActiveFolderSelect, adminLibraryFolderFilter];
+  selects.forEach(select => {
+    if (!select) return;
+    const oldValue = select.value;
+    select.innerHTML = '';
+
+    if (select === adminLibraryFolderFilter) {
+      const allOption = document.createElement('option');
+      allOption.value = 'all';
+      allOption.textContent = `All folders (${guessWhoLibrary.length})`;
+      select.appendChild(allOption);
+    }
+
+    guessWhoFolders.forEach(folder => {
+      const option = document.createElement('option');
+      option.value = folder.id;
+      option.textContent = `${folder.name} (${folder.characterCount || 0})`;
+      select.appendChild(option);
+    });
+
+    if ([...select.options].some(option => option.value === oldValue)) {
+      select.value = oldValue;
+    } else if (select.options.length > 0) {
+      select.selectedIndex = 0;
+    }
+  });
+}
+
+function renderAdminFolders() {
+  if (!adminFolderList) return;
+
+  adminFolderCount.textContent = `${guessWhoFolders.length}`;
+  adminFolderList.innerHTML = '';
+
+  guessWhoFolders.forEach(folder => {
+    const row = createElement('div', 'folder-admin-row');
+    const info = document.createElement('div');
+    const title = createElement('div', 'folder-title', folder.name);
+    title.dir = 'auto';
+    const meta = createElement('div', 'folder-meta', `${folder.characterCount || 0} character(s)`);
+    info.appendChild(title);
+    info.appendChild(meta);
+
+    const renameBtn = createElement('button', 'secondary-btn', 'Rename');
+    renameBtn.type = 'button';
+    renameBtn.addEventListener('click', () => renameAdminFolder(folder));
+
+    const deleteBtn = createElement('button', 'danger-btn', folder.id === 'uncategorized' ? 'Protected' : 'Delete');
+    deleteBtn.type = 'button';
+    deleteBtn.disabled = folder.id === 'uncategorized';
+    deleteBtn.addEventListener('click', () => deleteAdminFolder(folder));
+
+    row.appendChild(info);
+    row.appendChild(renameBtn);
+    row.appendChild(deleteBtn);
+    adminFolderList.appendChild(row);
+  });
+}
+
+function getAdminVisibleCharacters() {
+  const folderId = adminLibraryFolderFilter?.value || 'all';
+  const query = (adminLibrarySearch?.value || '').trim().toLowerCase();
+
+  return guessWhoLibrary.filter(character => {
+    const folderMatches = folderId === 'all' || character.folderId === folderId;
+    const queryMatches = !query || character.name.toLowerCase().includes(query) || getCharacterFolderName(character).toLowerCase().includes(query);
+    return folderMatches && queryMatches;
+  });
+}
+
+function renderAdminCharacters() {
+  adminLibraryCount.textContent = `${guessWhoLibrary.length}`;
+  adminLibraryGrid.innerHTML = '';
+
+  const visible = getAdminVisibleCharacters();
+  if (guessWhoLibrary.length === 0) {
+    const empty = createElement('p', 'small-note', 'No characters uploaded yet. Create a folder above, then upload images into it.');
+    adminLibraryGrid.appendChild(empty);
+    return;
+  }
+
+  if (visible.length === 0) {
+    adminLibraryGrid.appendChild(createElement('p', 'small-note', 'No characters match this folder/search.'));
+    return;
+  }
+
+  visible.forEach(character => {
+    const card = createElement('div', 'admin-card');
+    const img = document.createElement('img');
+    img.src = character.imageUrl;
+    img.alt = character.name;
+    img.loading = 'lazy';
+
+    const name = createElement('div', 'name', character.name);
+    name.dir = 'auto';
+    const folderName = createElement('div', 'folder-name', getCharacterFolderName(character));
+    folderName.dir = 'auto';
+    const deleteBtn = createElement('button', 'danger-btn', 'Delete');
+    deleteBtn.addEventListener('click', () => deleteAdminCharacter(character.id, character.name));
+
+    card.appendChild(img);
+    card.appendChild(name);
+    card.appendChild(folderName);
+    card.appendChild(deleteBtn);
+    adminLibraryGrid.appendChild(card);
+  });
+}
+
 async function loadAdminLibrary() {
   setMessage(adminError, '');
   setMessage(adminStatus, '');
 
   try {
-    guessWhoLibrary = await getGuessWhoCharacters();
-    adminLibraryCount.textContent = `${guessWhoLibrary.length}`;
-    adminLibraryGrid.innerHTML = '';
-
-    if (guessWhoLibrary.length === 0) {
-      const empty = createElement('p', 'small-note', 'No characters uploaded yet. Upload images above to build your library.');
-      adminLibraryGrid.appendChild(empty);
-      return;
-    }
-
-    guessWhoLibrary.forEach(character => {
-      const card = createElement('div', 'admin-card');
-      const img = document.createElement('img');
-      img.src = character.imageUrl;
-      img.alt = character.name;
-      img.loading = 'lazy';
-
-      const name = createElement('div', 'name', character.name);
-      name.dir = 'auto';
-      const deleteBtn = createElement('button', 'danger-btn', 'Delete');
-      deleteBtn.addEventListener('click', () => deleteAdminCharacter(character.id, character.name));
-
-      card.appendChild(img);
-      card.appendChild(name);
-      card.appendChild(deleteBtn);
-      adminLibraryGrid.appendChild(card);
-    });
+    const data = await getGuessWhoLibraryData();
+    updateGuessWhoLibraryState(data);
+    renderAdminFolderSelects();
+    renderAdminFolders();
+    renderAdminCharacters();
+    renderGuessWhoFolderControls();
+    renderGuessWhoCharacterPicker();
+    renderGuessWhoLobbyLibraryBrowser();
   } catch (error) {
     setMessage(adminError, error.message || 'Could not load admin library.');
   }
 }
 
+function getAdminPassword() {
+  return adminPasswordInput.value.trim();
+}
+
+async function adminJsonRequest(url, options = {}) {
+  const password = getAdminPassword();
+  if (!password) throw new Error('Enter the admin upload password first.');
+
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-password': password,
+      ...(options.headers || {})
+    }
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || `Request failed with status ${response.status}.`);
+  return data;
+}
+
+async function createAdminFolder() {
+  const name = adminNewFolderName.value.trim();
+  if (!name) {
+    setMessage(adminError, 'Enter a folder name first.');
+    return;
+  }
+
+  try {
+    const data = await adminJsonRequest('/api/admin/guess-who/folders', {
+      method: 'POST',
+      body: JSON.stringify({ name })
+    });
+    updateGuessWhoLibraryState(data);
+    adminNewFolderName.value = '';
+    setMessage(adminStatus, `Created folder "${name}".`);
+    renderAdminFolderSelects();
+    renderAdminFolders();
+    renderAdminCharacters();
+    renderGuessWhoFolderControls();
+    renderGuessWhoCharacterPicker();
+    renderGuessWhoLobbyLibraryBrowser();
+  } catch (error) {
+    setMessage(adminError, error.message || 'Could not create folder.');
+  }
+}
+
+async function renameAdminFolder(folder) {
+  const newName = prompt('New folder name:', folder.name);
+  if (!newName || !newName.trim()) return;
+
+  try {
+    const data = await adminJsonRequest(`/api/admin/guess-who/folders/${encodeURIComponent(folder.id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name: newName.trim() })
+    });
+    updateGuessWhoLibraryState(data);
+    setMessage(adminStatus, `Renamed folder to "${newName.trim()}".`);
+    renderAdminFolderSelects();
+    renderAdminFolders();
+    renderAdminCharacters();
+    renderGuessWhoFolderControls();
+    renderGuessWhoCharacterPicker();
+    renderGuessWhoLobbyLibraryBrowser();
+  } catch (error) {
+    setMessage(adminError, error.message || 'Could not rename folder.');
+  }
+}
+
+async function deleteAdminFolder(folder) {
+  if (!confirm(`Delete folder "${folder.name}" and all ${folder.characterCount || 0} character(s) inside it?`)) return;
+
+  try {
+    const data = await adminJsonRequest(`/api/admin/guess-who/folders/${encodeURIComponent(folder.id)}`, {
+      method: 'DELETE'
+    });
+    updateGuessWhoLibraryState(data);
+    setMessage(adminStatus, `Deleted folder "${folder.name}".`);
+    renderAdminFolderSelects();
+    renderAdminFolders();
+    renderAdminCharacters();
+    renderGuessWhoFolderControls();
+    renderGuessWhoCharacterPicker();
+    renderGuessWhoLobbyLibraryBrowser();
+  } catch (error) {
+    setMessage(adminError, error.message || 'Could not delete folder.');
+  }
+}
+
 async function uploadAdminImages(files) {
-  const password = adminPasswordInput.value;
+  const password = getAdminPassword();
   if (!password) {
     setMessage(adminError, 'Enter the admin upload password first.');
     return;
@@ -823,7 +1199,14 @@ async function uploadAdminImages(files) {
     return;
   }
 
+  const folderId = adminActiveFolderSelect.value;
+  if (!folderId) {
+    setMessage(adminError, 'Create or choose a folder before uploading.');
+    return;
+  }
+
   const formData = new FormData();
+  formData.append('folderId', folderId);
   Array.from(files).forEach(file => {
     formData.append('images', file, file.name);
   });
@@ -852,11 +1235,16 @@ async function uploadAdminImages(files) {
       throw new Error(data.message || responseText || `Upload failed with status ${response.status}.`);
     }
 
+    updateGuessWhoLibraryState(data);
     setMessage(adminStatus, `Uploaded ${data.added?.length || 0} character image(s).`);
     adminFileInput.value = '';
     adminFolderInput.value = '';
-    await loadAdminLibrary();
-    await refreshGuessWhoLibraryCount();
+    renderAdminFolderSelects();
+    renderAdminFolders();
+    renderAdminCharacters();
+    renderGuessWhoFolderControls();
+    renderGuessWhoCharacterPicker();
+    renderGuessWhoLobbyLibraryBrowser();
   } catch (error) {
     setMessage(adminError, error.message || 'Upload failed.');
   } finally {
@@ -866,8 +1254,7 @@ async function uploadAdminImages(files) {
 }
 
 async function deleteAdminCharacter(id, name) {
-  const password = adminPasswordInput.value;
-  if (!password) {
+  if (!getAdminPassword()) {
     setMessage(adminError, 'Enter the admin upload password first.');
     return;
   }
@@ -877,24 +1264,37 @@ async function deleteAdminCharacter(id, name) {
   try {
     const response = await fetch(`/api/admin/guess-who/characters/${encodeURIComponent(id)}`, {
       method: 'DELETE',
-      headers: { 'x-admin-password': password }
+      headers: { 'x-admin-password': getAdminPassword() }
     });
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.message || 'Delete failed.');
 
+    updateGuessWhoLibraryState(data);
     setMessage(adminStatus, `Deleted ${name}.`);
-    await loadAdminLibrary();
-    await refreshGuessWhoLibraryCount();
+    renderAdminFolderSelects();
+    renderAdminFolders();
+    renderAdminCharacters();
+    renderGuessWhoFolderControls();
+    renderGuessWhoCharacterPicker();
+    renderGuessWhoLobbyLibraryBrowser();
   } catch (error) {
     setMessage(adminError, error.message || 'Delete failed.');
   }
 }
 
+adminCreateFolderBtn.addEventListener('click', createAdminFolder);
 adminUploadBtn.addEventListener('click', () => {
   const files = [...Array.from(adminFileInput.files), ...Array.from(adminFolderInput.files)];
   uploadAdminImages(files);
 });
+if (adminLibraryFolderFilter) adminLibraryFolderFilter.addEventListener('change', renderAdminCharacters);
+if (adminLibrarySearch) adminLibrarySearch.addEventListener('input', renderAdminCharacters);
+if (gwLobbyFolderFilter) gwLobbyFolderFilter.addEventListener('change', () => {
+  guessWhoLobbyFolderFilter = gwLobbyFolderFilter.value;
+  renderGuessWhoLobbyLibraryBrowser();
+});
+if (gwLobbyLibrarySearch) gwLobbyLibrarySearch.addEventListener('input', renderGuessWhoLobbyLibraryBrowser);
 
 // --------------------------
 // Guess Who UI and events
@@ -956,8 +1356,15 @@ function getGuessWhoRoundOptions() {
     return { selectionMode, selectedCharacterIds };
   }
 
+  const selectedFolderIds = [...guessWhoRandomFolderSelected];
+  if (selectedFolderIds.length === 0) {
+    setMessage(gwLobbyError, 'Select at least one folder for the random board.');
+    return null;
+  }
+
   return {
     selectionMode: 'random',
+    selectedFolderIds,
     autoFit: Boolean(gwAutoFitCheckbox.checked),
     boardSize: gwBoardSizeInput.value
   };
@@ -1073,14 +1480,17 @@ function updateGuessWhoBoardSourceUI() {
   const manual = gwBoardSourceSelect.value === 'selected';
   gwManualOptions.classList.toggle('hidden', !manual);
   gwRandomOptions.classList.toggle('hidden', manual);
+  renderGuessWhoFolderControls();
   renderGuessWhoCharacterPicker();
 }
 
 function getFilteredGuessWhoLibrary() {
   const query = guessWhoLibraryFilter.trim().toLowerCase();
-  if (!query) return guessWhoLibrary;
-
-  return guessWhoLibrary.filter(character => character.name.toLowerCase().includes(query));
+  return guessWhoLibrary.filter(character => {
+    const folderMatches = guessWhoManualFolderFilterSelected.has(character.folderId || 'uncategorized');
+    const queryMatches = !query || character.name.toLowerCase().includes(query) || getCharacterFolderName(character).toLowerCase().includes(query);
+    return folderMatches && queryMatches;
+  });
 }
 
 function renderGuessWhoCharacterPicker() {
@@ -1101,21 +1511,11 @@ function renderGuessWhoCharacterPicker() {
   }
 
   filtered.forEach(character => {
-    const card = createElement('button', 'picker-card');
-    card.type = 'button';
+    const card = renderSmallCharacterCard(character, {
+      button: true,
+      selected: guessWhoManualSelected.has(character.id)
+    });
     card.dataset.id = character.id;
-    if (guessWhoManualSelected.has(character.id)) card.classList.add('selected');
-
-    const img = document.createElement('img');
-    img.src = character.imageUrl;
-    img.alt = character.name;
-    img.loading = 'lazy';
-
-    const name = createElement('div', 'name', character.name);
-    name.dir = 'auto';
-
-    card.appendChild(img);
-    card.appendChild(name);
     card.addEventListener('click', () => {
       if (guessWhoManualSelected.has(character.id)) {
         guessWhoManualSelected.delete(character.id);
