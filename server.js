@@ -481,7 +481,7 @@ function normalizeGuessWhoLibraryData(rawData) {
     }
   });
 
-  if (!folderMap.has(DEFAULT_GUESS_WHO_FOLDER_ID)) {
+  if (characters.length > 0 && folderMap.size === 0) {
     folderMap.set(DEFAULT_GUESS_WHO_FOLDER_ID, createDefaultGuessWhoFolder());
   }
 
@@ -504,7 +504,8 @@ function normalizeGuessWhoLibraryData(rawData) {
     const name = normalizeCharacterDisplayName(character?.name || originalId || 'Unknown Character');
     const baseId = slugify(originalId || name);
     const id = uniqueId(baseId, characterIds);
-    const folderId = folderIds.has(character?.folderId) ? character.folderId : DEFAULT_GUESS_WHO_FOLDER_ID;
+    const fallbackFolderId = normalizedFolders[0]?.id || DEFAULT_GUESS_WHO_FOLDER_ID;
+    const folderId = folderIds.has(character?.folderId) ? character.folderId : fallbackFolderId;
 
     normalizedCharacters.push({
       ...character,
@@ -731,12 +732,6 @@ app.delete('/api/admin/guess-who/folders/:id', requireAdminPassword, async (req,
   const folder = libraryData.folders.find(item => item.id === id);
 
   if (!folder) return res.status(404).json({ message: 'Folder not found.' });
-  if (id === DEFAULT_GUESS_WHO_FOLDER_ID) {
-    return res.status(400).json({ message: 'The Uncategorized folder cannot be deleted.' });
-  }
-  if (libraryData.folders.length <= 1) {
-    return res.status(400).json({ message: 'Create another folder before deleting the only folder.' });
-  }
 
   const charactersToDelete = libraryData.characters.filter(character => character.folderId === id);
   libraryData.characters = libraryData.characters.filter(character => character.folderId !== id);
@@ -775,13 +770,11 @@ app.post('/api/admin/guess-who/upload', requireAdminPassword, (req, res, next) =
     }
 
     const libraryData = await readGuessWhoLibraryData();
-    const requestedFolderId = String(req.body?.folderId || DEFAULT_GUESS_WHO_FOLDER_ID).trim();
-    const folder = libraryData.folders.find(item => item.id === requestedFolderId)
-      || libraryData.folders.find(item => item.id === DEFAULT_GUESS_WHO_FOLDER_ID)
-      || createDefaultGuessWhoFolder();
+    const requestedFolderId = String(req.body?.folderId || '').trim();
+    const folder = libraryData.folders.find(item => item.id === requestedFolderId);
 
-    if (!libraryData.folders.some(item => item.id === folder.id)) {
-      libraryData.folders.push(folder);
+    if (!folder) {
+      return res.status(400).json({ message: 'Create or choose a folder before uploading.' });
     }
 
     const folderDir = path.join(GUESS_WHO_LIBRARY_DIR, folder.id);
@@ -827,6 +820,37 @@ app.post('/api/admin/guess-who/upload', requireAdminPassword, (req, res, next) =
       message: 'Upload failed while saving the images. Check server permissions/storage and try again.'
     });
   }
+});
+
+app.delete('/api/admin/guess-who/characters', requireAdminPassword, async (req, res) => {
+  const ids = Array.isArray(req.body?.ids)
+    ? [...new Set(req.body.ids.map(id => String(id || '').trim()).filter(Boolean))]
+    : [];
+
+  if (ids.length === 0) {
+    return res.status(400).json({ message: 'Select at least one character to delete.' });
+  }
+
+  const idSet = new Set(ids);
+  const libraryData = await readGuessWhoLibraryData();
+  const charactersToDelete = libraryData.characters.filter(item => idSet.has(item.id));
+
+  if (charactersToDelete.length === 0) {
+    return res.status(404).json({ message: 'No selected characters were found.' });
+  }
+
+  libraryData.characters = libraryData.characters.filter(item => !idSet.has(item.id));
+  await writeGuessWhoLibraryData(libraryData);
+
+  for (const character of charactersToDelete) {
+    await removeGuessWhoCharacterFile(character);
+  }
+
+  const saved = await readGuessWhoLibraryData();
+  res.json({
+    deletedCount: charactersToDelete.length,
+    ...buildGuessWhoLibraryPayload(saved)
+  });
 });
 
 app.delete('/api/admin/guess-who/characters/:id', requireAdminPassword, async (req, res) => {

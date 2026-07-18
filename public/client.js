@@ -42,6 +42,7 @@ let guessWhoLibraryFilter = '';
 let guessWhoRandomFolderSelected = new Set();
 let guessWhoManualFolderFilterSelected = new Set();
 let guessWhoLobbyFolderFilter = 'all';
+let adminSelectedCharacterIds = new Set();
 let viewportUpdateTimer = null;
 
 const appCard = document.getElementById('app-card');
@@ -258,6 +259,10 @@ const adminFolderCount = document.getElementById('admin-folder-count');
 const adminFolderList = document.getElementById('admin-folder-list');
 const adminLibraryFolderFilter = document.getElementById('admin-library-folder-filter');
 const adminLibrarySearch = document.getElementById('admin-library-search');
+const adminSelectedCount = document.getElementById('admin-selected-count');
+const adminSelectVisibleBtn = document.getElementById('admin-select-visible-btn');
+const adminClearSelectionBtn = document.getElementById('admin-clear-selection-btn');
+const adminDeleteSelectedBtn = document.getElementById('admin-delete-selected-btn');
 const adminLibraryGrid = document.getElementById('admin-library-grid');
 
 const savedName = getSavedName();
@@ -804,10 +809,6 @@ function updateGuessWhoLibraryState(data) {
   guessWhoFolders = Array.isArray(data.folders) ? data.folders : [];
   guessWhoLibraryCount = guessWhoLibrary.length;
 
-  if (guessWhoFolders.length === 0) {
-    guessWhoFolders = [{ id: 'uncategorized', name: 'Uncategorized', characterCount: guessWhoLibrary.length }];
-  }
-
   const folderIds = new Set(guessWhoFolders.map(folder => folder.id));
 
   guessWhoRandomFolderSelected = new Set([...guessWhoRandomFolderSelected].filter(id => folderIds.has(id)));
@@ -827,6 +828,7 @@ function updateGuessWhoLibraryState(data) {
 
   const selectedIds = new Set(guessWhoLibrary.map(character => character.id));
   guessWhoManualSelected = new Set([...guessWhoManualSelected].filter(id => selectedIds.has(id)));
+  adminSelectedCharacterIds = new Set([...adminSelectedCharacterIds].filter(id => selectedIds.has(id)));
 }
 
 function getFolderById(folderId) {
@@ -1023,9 +1025,8 @@ function renderAdminFolders() {
     renameBtn.type = 'button';
     renameBtn.addEventListener('click', () => renameAdminFolder(folder));
 
-    const deleteBtn = createElement('button', 'danger-btn', folder.id === 'uncategorized' ? 'Protected' : 'Delete');
+    const deleteBtn = createElement('button', 'danger-btn', 'Delete');
     deleteBtn.type = 'button';
-    deleteBtn.disabled = folder.id === 'uncategorized';
     deleteBtn.addEventListener('click', () => deleteAdminFolder(folder));
 
     row.appendChild(info);
@@ -1046,11 +1047,24 @@ function getAdminVisibleCharacters() {
   });
 }
 
+function updateAdminBulkControls() {
+  const selectedCount = adminSelectedCharacterIds.size;
+
+  if (adminSelectedCount) {
+    adminSelectedCount.textContent = `${selectedCount} selected`;
+  }
+
+  if (adminClearSelectionBtn) adminClearSelectionBtn.disabled = selectedCount === 0;
+  if (adminDeleteSelectedBtn) adminDeleteSelectedBtn.disabled = selectedCount === 0;
+}
+
 function renderAdminCharacters() {
   adminLibraryCount.textContent = `${guessWhoLibrary.length}`;
   adminLibraryGrid.innerHTML = '';
 
   const visible = getAdminVisibleCharacters();
+  updateAdminBulkControls();
+
   if (guessWhoLibrary.length === 0) {
     const empty = createElement('p', 'small-note', 'No characters uploaded yet. Create a folder above, then upload images into it.');
     adminLibraryGrid.appendChild(empty);
@@ -1064,6 +1078,23 @@ function renderAdminCharacters() {
 
   visible.forEach(character => {
     const card = createElement('div', 'admin-card');
+    const isSelected = adminSelectedCharacterIds.has(character.id);
+    if (isSelected) card.classList.add('selected');
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'character-select';
+    checkbox.checked = isSelected;
+    checkbox.title = `Select ${character.name}`;
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) {
+        adminSelectedCharacterIds.add(character.id);
+      } else {
+        adminSelectedCharacterIds.delete(character.id);
+      }
+      renderAdminCharacters();
+    });
+
     const img = document.createElement('img');
     img.src = character.imageUrl;
     img.alt = character.name;
@@ -1076,14 +1107,16 @@ function renderAdminCharacters() {
     const deleteBtn = createElement('button', 'danger-btn', 'Delete');
     deleteBtn.addEventListener('click', () => deleteAdminCharacter(character.id, character.name));
 
+    card.appendChild(checkbox);
     card.appendChild(img);
     card.appendChild(name);
     card.appendChild(folderName);
     card.appendChild(deleteBtn);
     adminLibraryGrid.appendChild(card);
   });
-}
 
+  updateAdminBulkControls();
+}
 async function loadAdminLibrary() {
   setMessage(adminError, '');
   setMessage(adminStatus, '');
@@ -1258,6 +1291,56 @@ async function uploadAdminImages(files) {
   }
 }
 
+function selectVisibleAdminCharacters() {
+  const visible = getAdminVisibleCharacters();
+  visible.forEach(character => adminSelectedCharacterIds.add(character.id));
+  renderAdminCharacters();
+  setMessage(adminStatus, `Selected ${visible.length} visible character(s).`);
+  setMessage(adminError, '');
+}
+
+function clearAdminCharacterSelection() {
+  adminSelectedCharacterIds.clear();
+  renderAdminCharacters();
+  setMessage(adminStatus, 'Selection cleared.');
+  setMessage(adminError, '');
+}
+
+async function deleteSelectedAdminCharacters() {
+  if (!getAdminPassword()) {
+    setMessage(adminError, 'Enter the admin upload password first.');
+    return;
+  }
+
+  const ids = [...adminSelectedCharacterIds].filter(id => guessWhoLibrary.some(character => character.id === id));
+  if (ids.length === 0) {
+    setMessage(adminError, 'Select at least one character to delete.');
+    return;
+  }
+
+  if (!confirm(`Delete ${ids.length} selected character(s)?`)) return;
+
+  try {
+    const data = await adminJsonRequest('/api/admin/guess-who/characters', {
+      method: 'DELETE',
+      body: JSON.stringify({ ids })
+    });
+
+    const deletedCount = data.deletedCount || ids.length;
+    adminSelectedCharacterIds.clear();
+    updateGuessWhoLibraryState(data);
+    setMessage(adminStatus, `Deleted ${deletedCount} selected character(s).`);
+    renderAdminFolderSelects();
+    renderAdminFolders();
+    renderAdminCharacters();
+    renderGuessWhoFolderControls();
+    renderGuessWhoCharacterPicker();
+    renderGuessWhoLobbyLibraryBrowser();
+  } catch (error) {
+    setMessage(adminError, error.message || 'Batch delete failed.');
+  }
+}
+
 async function deleteAdminCharacter(id, name) {
   if (!getAdminPassword()) {
     setMessage(adminError, 'Enter the admin upload password first.');
@@ -1289,6 +1372,9 @@ async function deleteAdminCharacter(id, name) {
 }
 
 adminCreateFolderBtn.addEventListener('click', createAdminFolder);
+if (adminSelectVisibleBtn) adminSelectVisibleBtn.addEventListener('click', selectVisibleAdminCharacters);
+if (adminClearSelectionBtn) adminClearSelectionBtn.addEventListener('click', clearAdminCharacterSelection);
+if (adminDeleteSelectedBtn) adminDeleteSelectedBtn.addEventListener('click', deleteSelectedAdminCharacters);
 adminUploadBtn.addEventListener('click', () => {
   const files = [...Array.from(adminFileInput.files), ...Array.from(adminFolderInput.files)];
   uploadAdminImages(files);
