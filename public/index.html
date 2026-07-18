@@ -298,11 +298,15 @@
     .inline-checkbox { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--text); }
     .inline-checkbox input { width: auto; margin: 0; }
     .admin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-top: 14px; }
-    .admin-card { background: var(--bg); border: 1px solid var(--panel-2); border-radius: 12px; overflow: hidden; text-align: center; }
+    .admin-card { position: relative; background: var(--bg); border: 1px solid var(--panel-2); border-radius: 12px; overflow: hidden; text-align: center; }
+    .admin-card.selected { border-color: var(--purple); box-shadow: 0 0 0 2px rgba(130,87,229,0.25); }
+    .admin-card .character-select { position: absolute; top: 8px; left: 8px; width: 20px; height: 20px; margin: 0; z-index: 2; accent-color: var(--purple); }
     .admin-card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--panel-2); }
     .admin-card .name { padding: 8px 8px 2px; font-weight: 800; font-size: 13px; min-height: 36px; unicode-bidi: plaintext; }
     .admin-card .folder-name { color: var(--muted); font-size: 11px; padding: 0 8px 8px; min-height: 20px; unicode-bidi: plaintext; }
     .admin-card button { border-radius: 0; margin: 0; font-size: 13px; padding: 8px; }
+    .admin-bulk-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+    .admin-bulk-tools button { width: auto; margin: 0; padding: 8px 10px; font-size: 13px; }
     @media (max-width: 760px) {
       body { padding: 6px; }
       .app-card { padding: 18px; }
@@ -704,6 +708,12 @@
         <div class="library-browser-tools">
           <select id="admin-library-folder-filter"></select>
           <input type="search" id="admin-library-search" placeholder="Search saved characters...">
+        </div>
+        <div class="admin-bulk-tools">
+          <span id="admin-selected-count" class="pill gray">0 selected</span>
+          <button id="admin-select-visible-btn" class="secondary-btn" type="button">Select Visible</button>
+          <button id="admin-clear-selection-btn" class="secondary-btn" type="button">Clear Selection</button>
+          <button id="admin-delete-selected-btn" class="danger-btn" type="button">Delete Selected</button>
         </div>
         <div id="admin-library-grid" class="admin-grid"></div>
       </div>
