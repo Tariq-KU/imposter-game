@@ -43,6 +43,10 @@
       text-align: center;
     }
     .narrow { max-width: 520px; }
+    .home-card {
+      max-width: min(1080px, calc(100vw - 40px));
+      padding: clamp(24px, 3vw, 34px);
+    }
     .guesswho-play-layout {
       max-width: min(1500px, calc(100vw - 12px));
       padding: clamp(8px, 1.4vw, 22px);
@@ -100,6 +104,20 @@
     }
     .game-choice h2 { margin-bottom: 6px; }
     .game-choice p { margin-bottom: 18px; }
+    .home-card .game-choice-grid { gap: 22px; margin-top: 24px; }
+    .home-card .game-choice {
+      min-height: 230px;
+      padding: 26px 28px;
+    }
+    .home-card .game-choice h2 {
+      font-size: clamp(28px, 2vw, 36px);
+      letter-spacing: -0.02em;
+    }
+    .home-card .game-choice p {
+      font-size: 18px;
+      line-height: 1.42;
+      max-width: 95%;
+    }
     .admin-link { margin-top: 18px; }
     ul { list-style: none; padding: 0; text-align: left; background: var(--bg); border-radius: 10px; padding: 10px; }
     li { padding: 9px; border-bottom: 1px solid var(--panel-2); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
@@ -296,18 +314,39 @@
       .guesswho-play-layout .secret-card img { width: 54px; height: 54px; }
     }
 
-    .home-card {
-      max-width: min(1120px, calc(100vw - 40px));
+    .home-brand {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin: 0 auto 22px;
     }
-    #game-select-screen {
-      width: 100%;
-    }
-    .main-logo {
-      display: block;
-      width: min(360px, 85vw);
-      height: auto;
+    .home-brand-icon {
+      width: 58px;
+      height: 58px;
       object-fit: contain;
-      margin: 0 auto 24px;
+      flex: 0 0 auto;
+    }
+    .home-brand-text {
+      display: flex;
+      align-items: baseline;
+      gap: 7px;
+      font-weight: 950;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      line-height: 1;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .home-brand-text .brand-cryptic {
+      font-size: clamp(28px, 3vw, 42px);
+      color: #2d5bc3;
+      text-shadow: 0 2px 12px rgba(45, 91, 195, 0.18);
+    }
+    .home-brand-text .brand-hub {
+      font-size: clamp(24px, 2.6vw, 36px);
+      color: var(--purple);
+      text-shadow: 0 2px 12px rgba(130, 87, 229, 0.18);
     }
     .visually-hidden {
       position: absolute;
@@ -320,117 +359,41 @@
       white-space: nowrap;
       border: 0;
     }
-    @media (min-width: 820px) {
+    @media (max-width: 700px) {
+      body { padding: 10px; }
       .home-card {
-        min-height: min(640px, calc(100svh - 40px));
-        display: flex;
-        align-items: center;
+        max-width: 100%;
+        padding: 18px;
       }
-      #game-select-screen {
-        display: grid;
-        grid-template-columns: minmax(320px, 0.95fr) minmax(360px, 1.05fr);
-        grid-template-areas:
-          "logo intro"
-          "logo choices"
-          "logo admin";
-        column-gap: clamp(24px, 4vw, 60px);
-        row-gap: 14px;
-        align-items: center;
-        text-align: left;
+      .home-brand {
+        gap: 9px;
+        margin-bottom: 18px;
       }
-      #game-select-screen .main-logo {
-        grid-area: logo;
-        width: min(460px, 42vw);
-        max-height: min(540px, calc(100svh - 110px));
-        margin: 0 auto;
+      .home-brand-icon {
+        width: 48px;
+        height: 48px;
       }
-      #game-select-screen .subtitle {
-        grid-area: intro;
-        margin: 0;
-        font-size: clamp(16px, 1.35vw, 19px);
+      .home-brand-text .brand-cryptic { font-size: 24px; }
+      .home-brand-text .brand-hub { font-size: 21px; }
+      .home-card .subtitle {
+        font-size: 15px;
+        margin-bottom: 18px;
       }
-      #game-select-screen .game-choice-grid {
-        grid-area: choices;
+      .home-card .game-choice-grid {
         grid-template-columns: 1fr;
         gap: 12px;
-        margin-top: 0;
       }
-      #game-select-screen .game-choice {
-        min-height: 0;
-        padding: clamp(16px, 2vw, 22px);
+      .home-card .game-choice {
+        min-height: auto;
+        padding: 18px;
       }
-      #game-select-screen .game-choice p {
-        margin-bottom: 14px;
-      }
-      #game-select-screen .admin-link {
-        grid-area: admin;
-        margin-top: 0;
-      }
-    }
-    @media (max-width: 819px) {
-      .home-card {
-        width: 100%;
-        max-width: min(520px, calc(100vw - 12px));
-        min-height: calc(100svh - 12px);
-        padding: clamp(12px, 4vw, 18px);
-        display: flex;
-        align-items: stretch;
-      }
-      #game-select-screen {
-        min-height: calc(100svh - 48px);
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        gap: 10px;
-      }
-      #game-select-screen .main-logo {
-        width: min(330px, 88vw);
-        max-height: 38svh;
-        margin: 0 auto 6px;
-      }
-      #game-select-screen .subtitle {
-        margin: 0 0 8px;
-        font-size: 14px;
-        line-height: 1.35;
-      }
-      #game-select-screen .game-choice-grid {
-        width: 100%;
-        gap: 8px;
-        margin-top: auto;
-      }
-      #game-select-screen .game-choice {
-        min-height: 0;
-        padding: 12px;
-      }
-      #game-select-screen .game-choice h2 {
-        font-size: 20px;
-        margin-bottom: 3px;
-      }
-      #game-select-screen .game-choice p {
-        font-size: 13px;
-        line-height: 1.35;
-        margin: 0 0 8px;
-      }
-      #game-select-screen .game-choice button,
-      #game-select-screen .admin-link {
-        padding: 10px;
-        margin: 6px 0;
-        font-size: 15px;
-      }
-      #game-select-screen .admin-link {
-        margin-top: 8px;
-      }
-    }
-    @media (max-width: 420px) and (max-height: 700px) {
-      #game-select-screen .main-logo {
-        max-height: 32svh;
-        width: min(285px, 84vw);
-      }
-      #game-select-screen .subtitle {
-        font-size: 13px;
-      }
-      #game-select-screen .game-choice p {
-        display: none;
+      .home-card .game-choice h2 { font-size: 26px; }
+      .home-card .game-choice p {
+        display: block;
+        max-width: none;
+        font-size: 16px;
+        line-height: 1.45;
+        margin-bottom: 16px;
       }
     }
     .small-note { font-size: 13px; color: var(--muted); margin: 6px 0; }
@@ -441,7 +404,13 @@
   <div id="app-card" class="app-card home-card">
     <!-- Game selection -->
     <div id="game-select-screen" class="screen">
-      <img src="/cryptic-hub-logo-transparent.png" alt="Cryptic Hub Logo" class="main-logo">
+      <div class="home-brand" aria-label="Cryptic Hub">
+        <img src="/cryptic-hub-icon-cropped.png" alt="" class="home-brand-icon" aria-hidden="true">
+        <div class="home-brand-text" aria-hidden="true">
+          <span class="brand-cryptic">Cryptic</span>
+          <span class="brand-hub">Hub</span>
+        </div>
+      </div>
       <h1 class="visually-hidden">Cryptic Hub</h1>
       <p class="subtitle">Choose a game mode and start a private room with your friends.</p>
       <div class="game-choice-grid">
