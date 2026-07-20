@@ -90,7 +90,7 @@
     .button-row { display: grid; gap: 10px; grid-template-columns: 1fr; }
     @media (min-width: 680px) { .button-row.two { grid-template-columns: 1fr 1fr; } }
     .game-choice-grid { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 22px; }
-    @media (min-width: 760px) { .game-choice-grid { grid-template-columns: 1fr 1fr; } }
+    @media (min-width: 760px) { .game-choice-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
     .game-choice {
       text-align: left;
       padding: 22px;
@@ -307,6 +307,35 @@
     .admin-card button { border-radius: 0; margin: 0; font-size: 13px; padding: 8px; }
     .admin-bulk-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
     .admin-bulk-tools button { width: auto; margin: 0; padding: 8px 10px; font-size: 13px; }
+
+    .categories-layout { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+    @media (min-width: 900px) { .categories-layout.two { grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); } }
+    .category-chip-grid { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+    .category-chip { width: auto; margin: 0; padding: 8px 10px; border-radius: 999px; font-size: 13px; background: var(--panel-2); border: 1px solid var(--panel-3); }
+    .category-chip.active { background: var(--purple); border-color: var(--purple); }
+    .category-list-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin: 6px 0; }
+    .category-list-row input { margin: 0; }
+    .category-list-row button { width: auto; margin: 0; padding: 8px 10px; }
+    .letter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 8px; margin: 12px 0; }
+    .letter-grid button { margin: 0; padding: 10px 4px; font-weight: 900; }
+    .letter-grid button.used { opacity: 0.35; filter: grayscale(1); cursor: not-allowed; }
+    .answer-grid { display: grid; gap: 10px; text-align: left; }
+    .answer-row label { display: block; color: #fff; font-weight: 900; margin-bottom: 4px; unicode-bidi: plaintext; }
+    .answer-row input { margin: 0; }
+    .locked-warning { background: #3a2026; border: 1px solid var(--red); color: #fff; padding: 12px; border-radius: 12px; margin: 12px 0; }
+    .review-answer-card { background: var(--bg); border: 1px solid var(--panel-2); border-radius: 12px; padding: 12px; margin: 10px 0; }
+    .review-answer-card.final-valid { border-color: var(--green); }
+    .review-answer-card.final-invalid { border-color: var(--red); }
+    .review-answer-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+    .review-answer-text { font-size: 20px; font-weight: 900; color: #fff; unicode-bidi: plaintext; }
+    .vote-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .vote-row button { width: auto; margin: 0; padding: 8px 12px; font-size: 14px; }
+    .score-override { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+    .score-override select { width: auto; min-width: 120px; margin: 0; padding: 8px; }
+    .scoreboard-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    .scoreboard-table th, .scoreboard-table td { border-bottom: 1px solid var(--panel-2); padding: 10px; text-align: left; }
+    .rtl-text { direction: rtl; text-align: right; }
+
     @media (max-width: 760px) {
       body { padding: 6px; }
       .app-card { padding: 18px; }
@@ -431,6 +460,13 @@
             <p>Two players, shared character board, private secret picks, local eliminations, chat, and points.</p>
           </div>
           <button id="select-guesswho-btn" class="purple-btn">Play Guess Who</button>
+        </div>
+        <div class="game-choice">
+          <div>
+            <h2>Categories</h2>
+            <p>Arabic or English word categories, rotating letters, fast submissions, hidden totals, and group voting.</p>
+          </div>
+          <button id="select-categories-btn" class="warning-btn">Play Categories</button>
         </div>
       </div>
       <button id="select-admin-btn" class="secondary-btn admin-link">Admin: Manage Guess Who Characters</button>
@@ -668,6 +704,132 @@
           <div id="gw-game-error" class="error"></div>
           <button id="gw-leave-game-btn" class="danger-btn">Leave Guess Who Room</button>
         </div>
+      </div>
+    </div>
+
+
+    <!-- Categories setup -->
+    <div id="cat-setup-screen" class="screen hidden">
+      <h1>Categories</h1>
+      <p class="subtitle">Play in Arabic or English with custom categories and rotating letters.</p>
+      <input type="text" id="cat-player-name" placeholder="Enter Your Name" maxlength="18">
+      <button id="cat-create-room-btn" class="warning-btn">Create Categories Room</button>
+      <input type="text" id="cat-room-code-input" placeholder="Enter 4-Letter Room Code" autocomplete="off">
+      <button id="cat-join-room-btn" class="secondary-btn">Join Categories Room</button>
+      <div id="cat-setup-error" class="error"></div>
+      <button id="back-from-cat-setup-btn" class="secondary-btn">Back to Games</button>
+    </div>
+
+    <!-- Categories lobby -->
+    <div id="cat-lobby-screen" class="screen hidden">
+      <div class="top-bar">
+        <h2>Categories Room: <span id="cat-display-room-code" class="room-code">----</span></h2>
+        <span class="pill gray">2-10 players</span>
+      </div>
+      <div class="categories-layout two">
+        <div class="panel">
+          <h3>Players</h3>
+          <ul id="cat-player-list"></ul>
+          <p id="cat-lobby-status" class="small-note">Waiting for players...</p>
+        </div>
+        <div id="cat-host-controls" class="panel hidden">
+          <h3>Host Settings</h3>
+          <label for="cat-language-select">Language</label>
+          <select id="cat-language-select">
+            <option value="ar">Arabic</option>
+            <option value="en">English</option>
+          </select>
+          <label for="cat-round-count">Number of rounds</label>
+          <input type="number" id="cat-round-count" min="1" max="28" value="10">
+          <h3 style="margin-top:14px;">Categories</h3>
+          <p class="small-note">Use defaults, add suggestions, or create your own categories.</p>
+          <div class="button-row two">
+            <button id="cat-use-defaults-btn" type="button" class="secondary-btn">Use Defaults</button>
+            <button id="cat-clear-categories-btn" type="button" class="secondary-btn">Clear</button>
+          </div>
+          <div id="cat-suggested-categories" class="category-chip-grid"></div>
+          <div id="cat-selected-categories"></div>
+          <div class="button-row two">
+            <input type="text" id="cat-custom-category-input" placeholder="Add custom category">
+            <button id="cat-add-category-btn" type="button" class="secondary-btn">Add</button>
+          </div>
+          <button id="cat-start-game-btn" class="warning-btn">Start Game</button>
+          <button id="cat-end-game-lobby-btn" class="secondary-btn hidden">End Game Early</button>
+        </div>
+      </div>
+      <div id="cat-lobby-error" class="error"></div>
+      <button id="cat-leave-lobby-btn" class="danger-btn">Leave Categories Room</button>
+    </div>
+
+    <!-- Categories letter selection -->
+    <div id="cat-letter-screen" class="screen hidden">
+      <div class="top-bar">
+        <h2>Choose Letter</h2>
+        <span>Room <span id="cat-letter-room-code" class="room-code">----</span></span>
+      </div>
+      <div class="panel">
+        <h3 id="cat-letter-picker-label">Waiting for letter picker...</h3>
+        <p id="cat-letter-help" class="small-note">Each round uses a unique letter. Used letters are disabled.</p>
+        <div id="cat-letter-grid" class="letter-grid"></div>
+        <p id="cat-used-letters" class="small-note"></p>
+      </div>
+      <div id="cat-letter-error" class="error"></div>
+      <div class="button-row two">
+        <button id="cat-end-game-letter-btn" class="secondary-btn hidden">End Game Early</button>
+        <button id="cat-leave-letter-btn" class="danger-btn">Leave Categories Room</button>
+      </div>
+    </div>
+
+    <!-- Categories writing -->
+    <div id="cat-writing-screen" class="screen hidden">
+      <div class="top-bar">
+        <h2>Letter: <span id="cat-current-letter" class="room-code">-</span></h2>
+        <span id="cat-round-label" class="pill gray">Round -</span>
+      </div>
+      <div id="cat-writing-lock-warning" class="locked-warning hidden"></div>
+      <div class="panel">
+        <p class="small-note">The first player to finish locks the round for everyone. Leaving the website during this phase locks only your own answers.</p>
+        <div id="cat-answer-grid" class="answer-grid"></div>
+        <button id="cat-finish-round-btn" class="warning-btn">Finished - Lock Round</button>
+      </div>
+      <div id="cat-writing-error" class="error"></div>
+      <button id="cat-leave-writing-btn" class="danger-btn">Leave Categories Room</button>
+    </div>
+
+    <!-- Categories review -->
+    <div id="cat-review-screen" class="screen hidden">
+      <div class="top-bar">
+        <h2>Review: <span id="cat-review-category-name" class="room-code">-</span></h2>
+        <span>Letter <span id="cat-review-letter" class="room-code">-</span></span>
+      </div>
+      <p id="cat-review-info" class="small-note"></p>
+      <div id="cat-review-list" class="panel"></div>
+      <div id="cat-review-error" class="error"></div>
+      <div class="button-row two">
+        <button id="cat-finalize-category-btn" class="warning-btn hidden">Finalize Category / Next</button>
+        <button id="cat-end-game-review-btn" class="secondary-btn hidden">End Game Early</button>
+      </div>
+    </div>
+
+    <!-- Categories between rounds -->
+    <div id="cat-between-screen" class="screen hidden">
+      <h1>Round Saved</h1>
+      <p id="cat-between-summary" class="subtitle">Scores are hidden until the end of the game.</p>
+      <div id="cat-round-scoreboard" class="panel"></div>
+      <div class="button-row two">
+        <button id="cat-next-round-btn" class="warning-btn hidden">Next Round</button>
+        <button id="cat-end-game-between-btn" class="secondary-btn hidden">End Game Early</button>
+      </div>
+    </div>
+
+    <!-- Categories game over -->
+    <div id="cat-gameover-screen" class="screen hidden">
+      <h1>Final Scores</h1>
+      <div id="cat-final-round-scoreboard" class="panel"></div>
+      <div id="cat-final-scoreboard" class="panel"></div>
+      <div class="button-row two">
+        <button id="cat-return-lobby-btn" class="secondary-btn hidden">Return to Lobby</button>
+        <button id="cat-leave-gameover-btn" class="danger-btn">Leave Categories Room</button>
       </div>
     </div>
 

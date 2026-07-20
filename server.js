@@ -182,17 +182,20 @@ const categories = {
 
 const rooms = {};
 const guessWhoRooms = {};
+const categoriesGameRooms = {};
 const playerDisconnectTimers = new Map();
 const roomCleanupTimers = new Map();
 const guessWhoDisconnectTimers = new Map();
 const guessWhoRoomCleanupTimers = new Map();
+const categoriesDisconnectTimers = new Map();
+const categoriesRoomCleanupTimers = new Map();
 
 function normalizeRoomCode(roomCode) {
   return String(roomCode || '').trim().toUpperCase();
 }
 
 function roomCodeExists(code) {
-  return Boolean(rooms[code] || guessWhoRooms[code]);
+  return Boolean(rooms[code] || guessWhoRooms[code] || categoriesGameRooms[code]);
 }
 
 function generateRoomCode() {
@@ -1164,6 +1167,530 @@ function requireGuessWhoHost(socket, room) {
 // --------------------------
 // Socket events
 // --------------------------
+
+// --------------------------
+// Categories game helpers
+// --------------------------
+const CATEGORIES_MIN_PLAYERS = 2;
+const CATEGORIES_MAX_PLAYERS = 10;
+const CATEGORIES_DEFAULT_ROUNDS = 10;
+const CATEGORIES_MAX_CATEGORIES = 14;
+const CATEGORIES_FINISHER_PENALTY = -10;
+
+const CATEGORIES_GAME_CONFIG = {
+  ar: {
+    label: 'Arabic',
+    dir: 'rtl',
+    letters: ['ا', 'ب', 'ت', 'ث', 'ج', 'ح', 'خ', 'د', 'ذ', 'ر', 'ز', 'س', 'ش', 'ص', 'ض', 'ط', 'ظ', 'ع', 'غ', 'ف', 'ق', 'ك', 'ل', 'م', 'ن', 'ه', 'و', 'ي'],
+    defaultCategories: ['اسم', 'حيوان', 'نبات', 'بلاد', 'جماد'],
+    suggestedCategories: ['أكلة', 'مشهور', 'مهنة', 'لون', 'مدينة', 'رياضة', 'فيلم/مسلسل', 'ماركة', 'شيء في البيت', 'شيء في المدرسة']
+  },
+  en: {
+    label: 'English',
+    dir: 'ltr',
+    letters: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''),
+    defaultCategories: ['Name', 'Animal', 'Plant', 'Country', 'Object'],
+    suggestedCategories: ['Food', 'Celebrity', 'Job', 'Color', 'City', 'Sport', 'Movie/Show', 'Brand', 'Household Item', 'School Item']
+  }
+};
+
+function categoriesChannel(code) {
+  return `categories:${code}`;
+}
+
+function categoriesTimerKey(code, playerId) {
+  return `${code}:${playerId}`;
+}
+
+function clearCategoriesPlayerTimer(code, playerId) {
+  clearTimerFromMap(categoriesDisconnectTimers, categoriesTimerKey(code, playerId));
+}
+
+function clearCategoriesRoomCleanupTimer(code) {
+  clearTimerFromMap(categoriesRoomCleanupTimers, code);
+}
+
+function clearCategoriesRoomTimers(code) {
+  clearCategoriesRoomCleanupTimer(code);
+  for (const key of categoriesDisconnectTimers.keys()) {
+    if (key.startsWith(`${code}:`)) {
+      clearTimerFromMap(categoriesDisconnectTimers, key);
+    }
+  }
+}
+
+function deleteCategoriesRoom(code) {
+  clearCategoriesRoomTimers(code);
+  delete categoriesGameRooms[code];
+}
+
+function scheduleCategoriesRoomCleanup(code) {
+  if (categoriesRoomCleanupTimers.has(code)) return;
+  const timer = setTimeout(() => {
+    const room = categoriesGameRooms[code];
+    if (!room) return;
+    if (room.players.every(player => player.offline)) {
+      deleteCategoriesRoom(code);
+      return;
+    }
+    categoriesRoomCleanupTimers.delete(code);
+  }, EMPTY_ROOM_TTL_MS);
+  categoriesRoomCleanupTimers.set(code, timer);
+}
+
+function getCategoriesConfig(language) {
+  return CATEGORIES_GAME_CONFIG[language] || CATEGORIES_GAME_CONFIG.ar;
+}
+
+function makeCategoryId(name, index = 0) {
+  const base = String(name || 'category')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_/]+/g, '-')
+    .replace(/[^\p{L}\p{N}-]+/gu, '')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 28) || 'category';
+  return `${base}-${index}-${crypto.randomBytes(3).toString('hex')}`;
+}
+
+function createCategoriesFromNames(names) {
+  const seen = new Set();
+  return names
+    .map(name => String(name || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .filter(name => {
+      const key = name.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, CATEGORIES_MAX_CATEGORIES)
+    .map((name, index) => ({ id: makeCategoryId(name, index), name }));
+}
+
+function defaultCategoriesForLanguage(language) {
+  return createCategoriesFromNames(getCategoriesConfig(language).defaultCategories);
+}
+
+function publicCategoriesPlayers(room, showScores = false) {
+  return room.players.map(player => ({
+    id: player.id,
+    playerId: player.playerId,
+    name: player.name,
+    isHost: player.isHost,
+    offline: Boolean(player.offline),
+    lockedThisRound: Boolean(room.currentRound?.lockedPlayers?.[player.playerId]),
+    score: showScores ? (player.score || 0) : null
+  }));
+}
+
+function getCategoriesPlayerBySocket(room, socketId) {
+  return room.players.find(player => player.id === socketId);
+}
+
+function requireCategoriesHost(socket, room) {
+  const player = getCategoriesPlayerBySocket(room, socket.id);
+  return Boolean(player && player.isHost);
+}
+
+function stripArabicMarks(value) {
+  return String(value || '')
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+    .trim();
+}
+
+function normalizeArabicLetters(value) {
+  return stripArabicMarks(value).replace(/[أإآٱ]/g, 'ا');
+}
+
+function removeArabicArticle(value) {
+  const text = normalizeArabicLetters(value).trim();
+  return text.startsWith('ال') && text.length > 2 ? text.slice(2).trim() : text;
+}
+
+function firstArabicLetter(value) {
+  const text = removeArabicArticle(value).replace(/^[^\u0621-\u064A]+/u, '');
+  return Array.from(text)[0] || '';
+}
+
+function firstEnglishLetter(value) {
+  const text = String(value || '').trim().replace(/^[^a-zA-Z]+/, '');
+  return (text[0] || '').toUpperCase();
+}
+
+function answerStartsWithLetter(answer, letter, language) {
+  if (!String(answer || '').trim()) return false;
+  if (language === 'ar') return firstArabicLetter(answer) === letter;
+  return firstEnglishLetter(answer) === String(letter || '').toUpperCase();
+}
+
+function normalizeAnswerForDuplicate(answer, language) {
+  if (language === 'ar') {
+    return removeArabicArticle(answer)
+      .replace(/[\s\p{P}\p{S}]+/gu, '')
+      .toLowerCase();
+  }
+  return String(answer || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^the\s+/i, '')
+    .replace(/[\s\p{P}\p{S}]+/gu, '');
+}
+
+function normalizeChosenLetter(letter, language) {
+  const config = getCategoriesConfig(language);
+  if (language === 'ar') {
+    const normalized = normalizeArabicLetters(letter).trim();
+    return config.letters.includes(normalized) ? normalized : '';
+  }
+  const normalized = String(letter || '').trim().toUpperCase()[0] || '';
+  return config.letters.includes(normalized) ? normalized : '';
+}
+
+function cleanCategoriesSettings(payload = {}, fallbackLanguage = 'ar') {
+  const language = payload.language === 'en' ? 'en' : (payload.language === 'ar' ? 'ar' : fallbackLanguage);
+  const config = getCategoriesConfig(language);
+  let names = [];
+  if (Array.isArray(payload.categories)) {
+    names = payload.categories.map(item => typeof item === 'string' ? item : item?.name);
+  }
+  if (names.filter(Boolean).length === 0) names = config.defaultCategories;
+  const selectedCategories = createCategoriesFromNames(names);
+  const maxRounds = Math.max(1, Math.min(config.letters.length, parseInt(payload.maxRounds, 10) || CATEGORIES_DEFAULT_ROUNDS));
+  return { language, categories: selectedCategories, maxRounds };
+}
+
+function categoriesLibraryPayload() {
+  return {
+    ar: {
+      letters: CATEGORIES_GAME_CONFIG.ar.letters,
+      defaultCategories: CATEGORIES_GAME_CONFIG.ar.defaultCategories,
+      suggestedCategories: CATEGORIES_GAME_CONFIG.ar.suggestedCategories
+    },
+    en: {
+      letters: CATEGORIES_GAME_CONFIG.en.letters,
+      defaultCategories: CATEGORIES_GAME_CONFIG.en.defaultCategories,
+      suggestedCategories: CATEGORIES_GAME_CONFIG.en.suggestedCategories
+    }
+  };
+}
+
+function buildCategoriesReview(room, categoryId) {
+  const round = room.currentRound;
+  if (!round) return null;
+  const category = room.categories.find(item => item.id === categoryId) || room.categories[round.reviewIndex] || room.categories[0];
+  const duplicateMap = new Map();
+
+  room.players.forEach(player => {
+    const answer = String(round.answers[player.playerId]?.[category.id] || '').trim();
+    if (answer && answerStartsWithLetter(answer, round.letter, room.language)) {
+      const key = normalizeAnswerForDuplicate(answer, room.language);
+      if (key) {
+        if (!duplicateMap.has(key)) duplicateMap.set(key, []);
+        duplicateMap.get(key).push(player.playerId);
+      }
+    }
+  });
+
+  const answers = {};
+  room.players.forEach(player => {
+    const answer = String(round.answers[player.playerId]?.[category.id] || '').trim();
+    const empty = !answer;
+    const startsCorrect = !empty && answerStartsWithLetter(answer, round.letter, room.language);
+    const normalized = startsCorrect ? normalizeAnswerForDuplicate(answer, room.language) : '';
+    const duplicate = Boolean(normalized && duplicateMap.get(normalized)?.length > 1);
+    const autoInvalidReason = empty ? 'empty' : (!startsCorrect ? 'wrong-letter' : '');
+    answers[player.playerId] = {
+      playerId: player.playerId,
+      answer,
+      empty,
+      startsCorrect,
+      normalized,
+      duplicate,
+      suggestedScore: autoInvalidReason ? 0 : (duplicate ? 5 : 10),
+      autoInvalidReason,
+      votes: {},
+      finalized: false,
+      finalScore: null,
+      finalValid: null,
+      overrideScore: null
+    };
+  });
+
+  const review = { categoryId: category.id, categoryName: category.name, answers, finalized: false };
+  round.reviews[category.id] = review;
+  round.currentReviewCategoryId = category.id;
+  return review;
+}
+
+function getCurrentCategoriesReview(room) {
+  const round = room.currentRound;
+  if (!round) return null;
+  const categoryId = round.currentReviewCategoryId || room.categories[round.reviewIndex]?.id;
+  if (!categoryId) return null;
+  return round.reviews[categoryId] || buildCategoriesReview(room, categoryId);
+}
+
+function eligibleVoteCount(room) {
+  return Math.max(0, room.players.length - 1);
+}
+
+function finalizeCategoriesReview(room) {
+  const review = getCurrentCategoriesReview(room);
+  if (!review || review.finalized) return review;
+  const eligible = eligibleVoteCount(room);
+
+  Object.values(review.answers).forEach(answerState => {
+    let score;
+    let valid;
+    if (answerState.overrideScore !== null && answerState.overrideScore !== undefined) {
+      score = Math.max(0, Math.min(10, parseInt(answerState.overrideScore, 10) || 0));
+      valid = score > 0;
+    } else if (answerState.autoInvalidReason) {
+      score = 0;
+      valid = false;
+    } else {
+      const invalidVotes = Object.values(answerState.votes).filter(vote => vote === 'invalid').length;
+      // Benefit of doubt: one opponent alone cannot invalidate an answer in a 2-player game.
+      valid = eligible < 2 ? true : invalidVotes > eligible / 2 ? false : true;
+      score = valid ? answerState.suggestedScore : 0;
+    }
+    answerState.finalized = true;
+    answerState.finalScore = score;
+    answerState.finalValid = valid;
+    room.currentRound.roundScores[answerState.playerId] = (room.currentRound.roundScores[answerState.playerId] || 0) + score;
+  });
+
+  review.finalized = true;
+  return review;
+}
+
+function buildCategoriesRoundSummary(room, roundRecord) {
+  if (!roundRecord) return null;
+  const locker = room.players.find(player => player.playerId === roundRecord.lockerPlayerId);
+  return {
+    roundNumber: roundRecord.roundNumber,
+    letter: roundRecord.letter,
+    lockedByPlayerId: roundRecord.lockerPlayerId || '',
+    lockedByName: locker?.name || '',
+    penaltyApplied: Boolean(roundRecord.penaltyApplied),
+    scores: room.players.map(player => ({
+      playerId: player.playerId,
+      name: player.name,
+      score: roundRecord.roundScores?.[player.playerId] || 0,
+      hadFinisherPenalty: Boolean(roundRecord.penaltyApplied && roundRecord.lockerPlayerId === player.playerId)
+    }))
+  };
+}
+
+function completeCategoriesRound(room) {
+  const round = room.currentRound;
+  if (!round || round.completed) return;
+  const lockerId = round.lockerPlayerId;
+  let penaltyApplied = false;
+  if (lockerId) {
+    const hasZero = room.categories.some(category => {
+      const review = round.reviews[category.id];
+      const answerState = review?.answers?.[lockerId];
+      return !answerState || (answerState.finalScore || 0) === 0;
+    });
+    if (hasZero) {
+      round.roundScores[lockerId] = (round.roundScores[lockerId] || 0) + CATEGORIES_FINISHER_PENALTY;
+      penaltyApplied = true;
+    }
+  }
+  round.penaltyApplied = penaltyApplied;
+  round.completed = true;
+  room.players.forEach(player => {
+    player.score = (player.score || 0) + (round.roundScores[player.playerId] || 0);
+  });
+  room.roundHistory.push({
+    roundNumber: round.roundNumber,
+    letter: round.letter,
+    lockerPlayerId: lockerId,
+    penaltyApplied,
+    roundScores: { ...round.roundScores },
+    answers: JSON.parse(JSON.stringify(round.answers || {}))
+  });
+  room.status = room.roundNumber >= room.maxRounds || room.usedLetters.length >= getCategoriesConfig(room.language).letters.length ? 'gameOver' : 'between';
+}
+
+function beginCategoriesReview(room, lockerPlayerId = null) {
+  const round = room.currentRound;
+  if (!round || room.status !== 'writing') return;
+  round.lockerPlayerId = lockerPlayerId || round.lockerPlayerId || null;
+  round.lockedAt = Date.now();
+  room.players.forEach(player => {
+    round.lockedPlayers[player.playerId] = round.lockedPlayers[player.playerId] || { reason: 'round-locked', at: Date.now() };
+  });
+  room.status = 'review';
+  round.reviewIndex = 0;
+  round.reviews = round.reviews || {};
+  buildCategoriesReview(room, room.categories[0]?.id);
+}
+
+function lockCategoriesPlayerDuringWriting(room, playerId, reason, answers = {}) {
+  const round = room.currentRound;
+  if (!round || room.status !== 'writing') return;
+  round.answers[playerId] = { ...(round.answers[playerId] || {}), ...cleanSubmittedAnswers(room, answers) };
+  if (!round.lockedPlayers[playerId]) {
+    round.lockedPlayers[playerId] = { reason, at: Date.now() };
+  }
+  const everyoneLocked = room.players.every(player => Boolean(round.lockedPlayers[player.playerId]));
+  if (everyoneLocked) beginCategoriesReview(room, null);
+}
+
+function cleanSubmittedAnswers(room, answers = {}) {
+  const cleaned = {};
+  room.categories.forEach(category => {
+    cleaned[category.id] = String(answers[category.id] || '').trim().slice(0, 80);
+  });
+  return cleaned;
+}
+
+function currentCategoriesPicker(room) {
+  if (!room.players.length) return null;
+  return room.players[room.pickerIndex % room.players.length] || room.players[0];
+}
+
+function startCategoriesLetterSelection(room, advancePicker = false) {
+  if (advancePicker && room.players.length) room.pickerIndex = (room.pickerIndex + 1) % room.players.length;
+  room.status = 'letter';
+  room.currentLetter = '';
+  room.currentRound = null;
+}
+
+function startCategoriesWriting(room, letter) {
+  room.roundNumber += 1;
+  room.currentLetter = letter;
+  room.usedLetters.push(letter);
+  room.status = 'writing';
+  const picker = currentCategoriesPicker(room);
+  room.currentRound = {
+    roundNumber: room.roundNumber,
+    letter,
+    pickerPlayerId: picker?.playerId || null,
+    lockerPlayerId: null,
+    answers: {},
+    lockedPlayers: {},
+    reviewIndex: 0,
+    currentReviewCategoryId: null,
+    reviews: {},
+    roundScores: {},
+    penaltyApplied: false,
+    completed: false,
+    startedAt: Date.now()
+  };
+  room.players.forEach(player => {
+    room.currentRound.answers[player.playerId] = {};
+    room.categories.forEach(category => {
+      room.currentRound.answers[player.playerId][category.id] = '';
+    });
+  });
+}
+
+function buildCategoriesState(room, receiverPlayerId) {
+  const config = getCategoriesConfig(room.language);
+  const showTotals = room.status === 'gameOver';
+  const picker = currentCategoriesPicker(room);
+  const round = room.currentRound;
+  const myAnswers = round?.answers?.[receiverPlayerId] || {};
+  const myLocked = Boolean(round?.lockedPlayers?.[receiverPlayerId]);
+  const review = room.status === 'review' ? getCurrentCategoriesReview(room) : null;
+  let reviewPayload = null;
+
+  if (review) {
+    reviewPayload = {
+      categoryId: review.categoryId,
+      categoryName: review.categoryName,
+      finalized: review.finalized,
+      answers: room.players.map(player => {
+        const state = review.answers[player.playerId];
+        const eligible = player.playerId !== receiverPlayerId && !state.autoInvalidReason;
+        return {
+          playerId: player.playerId,
+          name: player.name,
+          answer: state.answer,
+          empty: state.empty,
+          startsCorrect: state.startsCorrect,
+          duplicate: state.duplicate,
+          suggestedScore: state.suggestedScore,
+          autoInvalidReason: state.autoInvalidReason,
+          finalized: state.finalized,
+          finalScore: state.finalScore,
+          finalValid: state.finalValid,
+          overrideScore: state.overrideScore,
+          canVote: eligible,
+          myVote: state.votes[receiverPlayerId] || '',
+          submittedVotes: Object.keys(state.votes).length,
+          eligibleVotes: Math.max(0, room.players.length - 1)
+        };
+      })
+    };
+  }
+
+  return {
+    gameType: 'categories',
+    roomCode: room.code,
+    status: room.status,
+    players: publicCategoriesPlayers(room, showTotals),
+    language: room.language,
+    languageLabel: config.label,
+    textDirection: config.dir,
+    categories: room.categories,
+    maxRounds: room.maxRounds,
+    roundNumber: room.roundNumber,
+    usedLetters: room.usedLetters,
+    availableLetters: config.letters.filter(letter => !room.usedLetters.includes(letter)),
+    allLetters: config.letters,
+    currentLetter: room.currentLetter,
+    pickerPlayerId: picker?.playerId || null,
+    pickerName: picker?.name || '',
+    isPicker: picker?.playerId === receiverPlayerId,
+    myAnswers,
+    myLocked,
+    currentRoundLockedBy: round?.lockerPlayerId || null,
+    currentRoundLockedByName: room.players.find(player => player.playerId === round?.lockerPlayerId)?.name || '',
+    reviewPayload,
+    lastRoundSummary: ['between', 'gameOver'].includes(room.status) && room.roundHistory.length
+      ? buildCategoriesRoundSummary(room, room.roundHistory[room.roundHistory.length - 1])
+      : null,
+    roundHistory: showTotals ? room.roundHistory.map(round => buildCategoriesRoundSummary(room, round)) : [],
+    finalScores: showTotals ? room.players.map(player => ({ playerId: player.playerId, name: player.name, score: player.score || 0 })) : [],
+    gameConfig: categoriesLibraryPayload(),
+    finisherPenalty: CATEGORIES_FINISHER_PENALTY
+  };
+}
+
+function sendCategoriesState(socket, room, playerId) {
+  socket.emit('catState', buildCategoriesState(room, playerId));
+}
+
+function emitCategoriesState(code) {
+  const room = categoriesGameRooms[code];
+  if (!room) return;
+  room.players.forEach(player => {
+    if (!player.offline) io.to(player.id).emit('catState', buildCategoriesState(room, player.playerId));
+  });
+}
+
+function attachCategoriesPlayerToSocket(socket, code, playerId, name) {
+  const room = categoriesGameRooms[code];
+  if (!room || !playerId) return false;
+  const player = room.players.find(item => item.playerId === playerId);
+  if (!player) return false;
+  clearCategoriesPlayerTimer(code, playerId);
+  clearCategoriesRoomCleanupTimer(code);
+  player.id = socket.id;
+  player.offline = false;
+  player.disconnectedAt = null;
+  if (name) player.name = name;
+  socket.join(categoriesChannel(code));
+  emitCategoriesState(code);
+  sendCategoriesState(socket, room, playerId);
+  return true;
+}
+
 io.on('connection', (socket) => {
   // ----- Imposter Game -----
   socket.on('rejoinRoom', (payload = {}) => {
@@ -1630,6 +2157,285 @@ io.on('connection', (socket) => {
     emitGuessWhoState(code);
   });
 
+
+  // --------------------------
+  // Categories game events
+  // --------------------------
+  socket.on('catSyncState', ({ roomCode, playerId } = {}) => {
+    const code = normalizeRoomCode(roomCode);
+    const success = attachCategoriesPlayerToSocket(socket, code, playerId);
+    if (!success) socket.emit('catErrorMsg', 'Could not rejoin the Categories room. It may have expired.');
+  });
+
+  socket.on('catCreateRoom', ({ name, playerId } = {}) => {
+    const cleanName = String(name || '').trim().slice(0, 18);
+    if (!cleanName) return socket.emit('catErrorMsg', 'Please enter a name first.');
+    if (!playerId) return socket.emit('catErrorMsg', 'Could not identify player. Please refresh and try again.');
+
+    const roomCode = generateRoomCode();
+    const initialSettings = cleanCategoriesSettings({}, 'ar');
+    categoriesGameRooms[roomCode] = {
+      code: roomCode,
+      players: [{ id: socket.id, playerId, name: cleanName, isHost: true, score: 0, offline: false, disconnectedAt: null }],
+      status: 'lobby',
+      language: initialSettings.language,
+      categories: initialSettings.categories,
+      maxRounds: CATEGORIES_DEFAULT_ROUNDS,
+      roundNumber: 0,
+      pickerIndex: 0,
+      usedLetters: [],
+      currentLetter: '',
+      currentRound: null,
+      roundHistory: []
+    };
+
+    socket.join(categoriesChannel(roomCode));
+    sendCategoriesState(socket, categoriesGameRooms[roomCode], playerId);
+  });
+
+  socket.on('catJoinRoom', ({ roomCode, playerName, playerId } = {}) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = categoriesGameRooms[code];
+    const cleanName = String(playerName || '').trim().slice(0, 18);
+
+    if (!room) return socket.emit('catErrorMsg', 'Categories room not found.');
+    if (!cleanName) return socket.emit('catErrorMsg', 'Please enter a name first.');
+    if (!playerId) return socket.emit('catErrorMsg', 'Could not identify player. Please refresh and try again.');
+
+    const existingPlayer = room.players.find(player => player.playerId === playerId);
+    if (existingPlayer) {
+      attachCategoriesPlayerToSocket(socket, code, playerId, cleanName);
+      return;
+    }
+
+    if (room.players.length >= CATEGORIES_MAX_PLAYERS) {
+      return socket.emit('catErrorMsg', `This Categories room is full. Maximum ${CATEGORIES_MAX_PLAYERS} players.`);
+    }
+
+    if (room.status !== 'lobby') {
+      return socket.emit('catErrorMsg', 'This Categories game has already started.');
+    }
+
+    clearCategoriesRoomCleanupTimer(code);
+    room.players.push({ id: socket.id, playerId, name: cleanName, isHost: false, score: 0, offline: false, disconnectedAt: null });
+    socket.join(categoriesChannel(code));
+    emitCategoriesState(code);
+  });
+
+  socket.on('catUpdateSettings', ({ roomCode, language, categoryNames, maxRounds } = {}) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = categoriesGameRooms[code];
+    if (!room) return;
+    if (!requireCategoriesHost(socket, room)) return socket.emit('catErrorMsg', 'Only the host can update settings.');
+    if (room.status !== 'lobby') return socket.emit('catErrorMsg', 'Settings can only be changed in the lobby.');
+
+    const settings = cleanCategoriesSettings({ language, categories: categoryNames, maxRounds }, room.language);
+    if (settings.categories.length < 1) return socket.emit('catErrorMsg', 'Please select at least one category.');
+    room.language = settings.language;
+    room.categories = settings.categories;
+    room.maxRounds = settings.maxRounds;
+    emitCategoriesState(code);
+  });
+
+  socket.on('catStartGame', ({ roomCode, language, categoryNames, maxRounds } = {}) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = categoriesGameRooms[code];
+    if (!room) return;
+    if (!requireCategoriesHost(socket, room)) return socket.emit('catErrorMsg', 'Only the host can start the game.');
+    if (room.players.length < CATEGORIES_MIN_PLAYERS) {
+      return socket.emit('catErrorMsg', `Categories needs at least ${CATEGORIES_MIN_PLAYERS} players.`);
+    }
+    if (room.players.some(player => player.offline)) {
+      return socket.emit('catErrorMsg', 'All players must be online before starting.');
+    }
+
+    const settings = cleanCategoriesSettings({ language, categories: categoryNames, maxRounds }, room.language);
+    room.language = settings.language;
+    room.categories = settings.categories;
+    room.maxRounds = settings.maxRounds;
+    room.players.forEach(player => { player.score = 0; });
+    room.roundNumber = 0;
+    room.usedLetters = [];
+    room.currentLetter = '';
+    room.currentRound = null;
+    room.roundHistory = [];
+    room.pickerIndex = 0;
+    room.status = 'letter';
+    emitCategoriesState(code);
+  });
+
+  socket.on('catChooseLetter', ({ roomCode, letter } = {}) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = categoriesGameRooms[code];
+    if (!room) return;
+    if (room.status !== 'letter') return socket.emit('catErrorMsg', 'Letter selection is not open.');
+
+    const player = getCategoriesPlayerBySocket(room, socket.id);
+    const picker = currentCategoriesPicker(room);
+    if (!player) return;
+    if (picker?.playerId !== player.playerId) {
+      return socket.emit('catErrorMsg', `${picker?.name || 'The next player'} must choose the letter.`);
+    }
+
+    const normalizedLetter = normalizeChosenLetter(letter, room.language);
+    if (!normalizedLetter) return socket.emit('catErrorMsg', 'Please choose a valid unused letter.');
+    if (room.usedLetters.includes(normalizedLetter)) return socket.emit('catErrorMsg', 'This letter was already used.');
+
+    startCategoriesWriting(room, normalizedLetter);
+    emitCategoriesState(code);
+  });
+
+  socket.on('catUpdateAnswers', ({ roomCode, answers } = {}) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = categoriesGameRooms[code];
+    if (!room || room.status !== 'writing' || !room.currentRound) return;
+    const player = getCategoriesPlayerBySocket(room, socket.id);
+    if (!player) return;
+    if (room.currentRound.lockedPlayers[player.playerId]) return;
+    room.currentRound.answers[player.playerId] = {
+      ...(room.currentRound.answers[player.playerId] || {}),
+      ...cleanSubmittedAnswers(room, answers)
+    };
+  });
+
+  socket.on('catFinishRound', ({ roomCode, answers } = {}) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = categoriesGameRooms[code];
+    if (!room || room.status !== 'writing' || !room.currentRound) return;
+    const player = getCategoriesPlayerBySocket(room, socket.id);
+    if (!player) return;
+    if (room.currentRound.lockedPlayers[player.playerId]) return socket.emit('catErrorMsg', 'Your answers are already locked.');
+    room.currentRound.answers[player.playerId] = {
+      ...(room.currentRound.answers[player.playerId] || {}),
+      ...cleanSubmittedAnswers(room, answers)
+    };
+    beginCategoriesReview(room, player.playerId);
+    emitCategoriesState(code);
+  });
+
+  socket.on('catLockSelf', ({ roomCode, answers } = {}) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = categoriesGameRooms[code];
+    if (!room || room.status !== 'writing' || !room.currentRound) return;
+    const player = getCategoriesPlayerBySocket(room, socket.id);
+    if (!player) return;
+    lockCategoriesPlayerDuringWriting(room, player.playerId, 'left-page', answers);
+    emitCategoriesState(code);
+  });
+
+  socket.on('catVoteAnswer', ({ roomCode, targetPlayerId, vote } = {}) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = categoriesGameRooms[code];
+    if (!room || room.status !== 'review') return;
+    const voter = getCategoriesPlayerBySocket(room, socket.id);
+    const review = getCurrentCategoriesReview(room);
+    if (!voter || !review || review.finalized) return;
+    if (targetPlayerId === voter.playerId) return socket.emit('catErrorMsg', 'You cannot vote on your own answer.');
+    const answerState = review.answers[targetPlayerId];
+    if (!answerState || answerState.autoInvalidReason) return;
+    const cleanVote = vote === 'invalid' ? 'invalid' : 'valid';
+    answerState.votes[voter.playerId] = cleanVote;
+    emitCategoriesState(code);
+  });
+
+  socket.on('catSetScoreOverride', ({ roomCode, targetPlayerId, score } = {}) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = categoriesGameRooms[code];
+    if (!room || room.status !== 'review') return;
+    if (!requireCategoriesHost(socket, room)) return socket.emit('catErrorMsg', 'Only the host can override scores after group discussion.');
+    const review = getCurrentCategoriesReview(room);
+    if (!review || review.finalized) return;
+    const answerState = review.answers[targetPlayerId];
+    if (!answerState) return;
+    const cleanScore = [0, 5, 10].includes(parseInt(score, 10)) ? parseInt(score, 10) : null;
+    answerState.overrideScore = cleanScore;
+    emitCategoriesState(code);
+  });
+
+  socket.on('catFinalizeCategory', (roomCode) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = categoriesGameRooms[code];
+    if (!room || room.status !== 'review') return;
+    if (!requireCategoriesHost(socket, room)) return socket.emit('catErrorMsg', 'Only the host can finalize the category.');
+
+    finalizeCategoriesReview(room);
+    const round = room.currentRound;
+    if (round.reviewIndex < room.categories.length - 1) {
+      round.reviewIndex += 1;
+      buildCategoriesReview(room, room.categories[round.reviewIndex].id);
+    } else {
+      completeCategoriesRound(room);
+    }
+    emitCategoriesState(code);
+  });
+
+  socket.on('catNextRound', (roomCode) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = categoriesGameRooms[code];
+    if (!room) return;
+    if (!requireCategoriesHost(socket, room)) return socket.emit('catErrorMsg', 'Only the host can start the next round.');
+    if (room.status === 'gameOver') return;
+    if (room.status !== 'between') return socket.emit('catErrorMsg', 'The current round is not complete yet.');
+    startCategoriesLetterSelection(room, true);
+    emitCategoriesState(code);
+  });
+
+  socket.on('catEndGame', (roomCode) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = categoriesGameRooms[code];
+    if (!room) return;
+    if (!requireCategoriesHost(socket, room)) return socket.emit('catErrorMsg', 'Only the host can end the game.');
+    room.status = 'gameOver';
+    emitCategoriesState(code);
+  });
+
+  socket.on('catReturnToLobby', (roomCode) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = categoriesGameRooms[code];
+    if (!room) return;
+    if (!requireCategoriesHost(socket, room)) return socket.emit('catErrorMsg', 'Only the host can return to the lobby.');
+    room.status = 'lobby';
+    room.roundNumber = 0;
+    room.usedLetters = [];
+    room.currentLetter = '';
+    room.currentRound = null;
+    room.roundHistory = [];
+    room.players.forEach(player => { player.score = 0; });
+    emitCategoriesState(code);
+  });
+
+  socket.on('catLeaveRoom', (roomCode) => {
+    const code = normalizeRoomCode(roomCode);
+    const room = categoriesGameRooms[code];
+    if (!room) return;
+
+    const index = room.players.findIndex(player => player.id === socket.id);
+    if (index === -1) return;
+    const removedPlayer = room.players.splice(index, 1)[0];
+    clearCategoriesPlayerTimer(code, removedPlayer.playerId);
+    socket.leave(categoriesChannel(code));
+
+    if (room.players.length === 0) {
+      deleteCategoriesRoom(code);
+      return;
+    }
+
+    if (removedPlayer.isHost && !room.players.some(player => player.isHost)) {
+      room.players[0].isHost = true;
+    }
+
+    if (room.status !== 'lobby' && room.players.length < CATEGORIES_MIN_PLAYERS) {
+      room.status = 'lobby';
+      room.currentRound = null;
+      room.usedLetters = [];
+      room.roundNumber = 0;
+      room.roundHistory = [];
+    }
+
+    if (room.pickerIndex >= room.players.length) room.pickerIndex = 0;
+    emitCategoriesState(code);
+  });
+
   socket.on('disconnect', () => {
     let handledDisconnect = false;
 
@@ -1690,6 +2496,7 @@ io.on('connection', (socket) => {
       const player = room.players.find(p => p.id === socket.id);
       if (!player) continue;
 
+      handledDisconnect = true;
       player.offline = true;
       player.disconnectedAt = Date.now();
       emitGuessWhoState(code);
@@ -1730,6 +2537,49 @@ io.on('connection', (socket) => {
         scheduleGuessWhoRoomCleanup(code);
       }
 
+      break;
+    }
+
+    if (handledDisconnect) return;
+
+    for (const code in categoriesGameRooms) {
+      const room = categoriesGameRooms[code];
+      const player = room.players.find(p => p.id === socket.id);
+      if (!player) continue;
+
+      player.offline = true;
+      player.disconnectedAt = Date.now();
+
+      // Anti-cheat: leaving during the active writing phase locks only that player.
+      if (room.status === 'writing' && room.currentRound) {
+        lockCategoriesPlayerDuringWriting(room, player.playerId, 'disconnected', room.currentRound.answers[player.playerId] || {});
+      }
+
+      emitCategoriesState(code);
+      clearCategoriesPlayerTimer(code, player.playerId);
+      const key = categoriesTimerKey(code, player.playerId);
+
+      const timer = setTimeout(() => {
+        const currentRoom = categoriesGameRooms[code];
+        if (!currentRoom) return;
+        const currentPlayer = currentRoom.players.find(p => p.playerId === player.playerId);
+        if (!currentPlayer || !currentPlayer.offline) return;
+
+        if (currentPlayer.isHost) {
+          const nextOnlineHost = currentRoom.players.find(p => !p.offline && p.playerId !== currentPlayer.playerId);
+          if (nextOnlineHost) {
+            currentPlayer.isHost = false;
+            nextOnlineHost.isHost = true;
+          }
+        }
+
+        emitCategoriesState(code);
+        if (currentRoom.players.every(p => p.offline)) scheduleCategoriesRoomCleanup(code);
+        categoriesDisconnectTimers.delete(key);
+      }, DISCONNECT_GRACE_MS);
+
+      categoriesDisconnectTimers.set(key, timer);
+      if (room.players.every(p => p.offline)) scheduleCategoriesRoomCleanup(code);
       break;
     }
   });

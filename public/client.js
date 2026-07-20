@@ -44,6 +44,15 @@ let guessWhoManualFolderFilterSelected = new Set();
 let guessWhoLobbyFolderFilter = 'all';
 let adminSelectedCharacterIds = new Set();
 let viewportUpdateTimer = null;
+let categoriesRoomCode = '';
+let categoriesPlayers = [];
+let categoriesStatus = 'lobby';
+let categoriesLanguage = 'ar';
+let categoriesConfig = null;
+let categoriesSelectedNames = [];
+let categoriesCurrentState = null;
+let categoriesAnswerAutosaveTimer = null;
+let categoriesLocallyLeaving = false;
 
 const appCard = document.getElementById('app-card');
 const screens = Array.from(document.querySelectorAll('.screen'));
@@ -54,7 +63,8 @@ function showScreen(screenId, wide = false) {
   if (screen) screen.classList.remove('hidden');
 
   const isGameSelect = screenId === 'game-select-screen';
-  const shouldUseWideCard = wide || isGameSelect;
+  const isCategoriesWide = ['cat-lobby-screen', 'cat-writing-screen', 'cat-review-screen', 'cat-between-screen', 'cat-gameover-screen'].includes(screenId);
+  const shouldUseWideCard = wide || isGameSelect || isCategoriesWide;
 
   appCard.classList.toggle('home-card', isGameSelect);
   appCard.classList.toggle('narrow', !shouldUseWideCard);
@@ -81,6 +91,7 @@ function saveName(name) {
   localStorage.setItem('imposter-playerName', name);
   if (playerNameInput) playerNameInput.value = name;
   if (gwPlayerNameInput) gwPlayerNameInput.value = name;
+  if (catPlayerNameInput) catPlayerNameInput.value = name;
 }
 
 function textOrDash(value) {
@@ -111,9 +122,11 @@ function getTimeLabel(timestamp) {
 // --------------------------
 const selectImposterBtn = document.getElementById('select-imposter-btn');
 const selectGuessWhoBtn = document.getElementById('select-guesswho-btn');
+const selectCategoriesBtn = document.getElementById('select-categories-btn');
 const selectAdminBtn = document.getElementById('select-admin-btn');
 const backFromImposterSetupBtn = document.getElementById('back-from-imposter-setup-btn');
 const backFromGwSetupBtn = document.getElementById('back-from-gw-setup-btn');
+const backFromCatSetupBtn = document.getElementById('back-from-cat-setup-btn');
 const backFromAdminBtn = document.getElementById('back-from-admin-btn');
 
 function showGameSelect() {
@@ -135,6 +148,11 @@ selectGuessWhoBtn.addEventListener('click', async () => {
   await refreshGuessWhoLibraryCount();
 });
 
+selectCategoriesBtn.addEventListener('click', () => {
+  showScreen('cat-setup-screen', false);
+  setMessage(catSetupError, '');
+});
+
 selectAdminBtn.addEventListener('click', async () => {
   showScreen('admin-screen', true);
   await loadAdminLibrary();
@@ -142,6 +160,7 @@ selectAdminBtn.addEventListener('click', async () => {
 
 backFromImposterSetupBtn.addEventListener('click', showGameSelect);
 backFromGwSetupBtn.addEventListener('click', showGameSelect);
+backFromCatSetupBtn.addEventListener('click', showGameSelect);
 backFromAdminBtn.addEventListener('click', showGameSelect);
 
 // --------------------------
@@ -242,6 +261,568 @@ const gwReturnLobbyBtn = document.getElementById('gw-return-lobby-btn');
 const gwGameError = document.getElementById('gw-game-error');
 const gwLeaveGameBtn = document.getElementById('gw-leave-game-btn');
 
+
+// --------------------------
+// Categories DOM elements
+// --------------------------
+const catSetupError = document.getElementById('cat-setup-error');
+const catPlayerNameInput = document.getElementById('cat-player-name');
+const catRoomCodeInput = document.getElementById('cat-room-code-input');
+const catCreateRoomBtn = document.getElementById('cat-create-room-btn');
+const catJoinRoomBtn = document.getElementById('cat-join-room-btn');
+const catDisplayRoomCode = document.getElementById('cat-display-room-code');
+const catPlayerList = document.getElementById('cat-player-list');
+const catLobbyStatus = document.getElementById('cat-lobby-status');
+const catHostControls = document.getElementById('cat-host-controls');
+const catLanguageSelect = document.getElementById('cat-language-select');
+const catRoundCount = document.getElementById('cat-round-count');
+const catUseDefaultsBtn = document.getElementById('cat-use-defaults-btn');
+const catClearCategoriesBtn = document.getElementById('cat-clear-categories-btn');
+const catSuggestedCategories = document.getElementById('cat-suggested-categories');
+const catSelectedCategories = document.getElementById('cat-selected-categories');
+const catCustomCategoryInput = document.getElementById('cat-custom-category-input');
+const catAddCategoryBtn = document.getElementById('cat-add-category-btn');
+const catStartGameBtn = document.getElementById('cat-start-game-btn');
+const catLobbyError = document.getElementById('cat-lobby-error');
+const catLeaveLobbyBtn = document.getElementById('cat-leave-lobby-btn');
+const catLetterRoomCode = document.getElementById('cat-letter-room-code');
+const catLetterPickerLabel = document.getElementById('cat-letter-picker-label');
+const catLetterHelp = document.getElementById('cat-letter-help');
+const catLetterGrid = document.getElementById('cat-letter-grid');
+const catUsedLetters = document.getElementById('cat-used-letters');
+const catLetterError = document.getElementById('cat-letter-error');
+const catEndGameLetterBtn = document.getElementById('cat-end-game-letter-btn');
+const catLeaveLetterBtn = document.getElementById('cat-leave-letter-btn');
+const catCurrentLetter = document.getElementById('cat-current-letter');
+const catRoundLabel = document.getElementById('cat-round-label');
+const catWritingLockWarning = document.getElementById('cat-writing-lock-warning');
+const catAnswerGrid = document.getElementById('cat-answer-grid');
+const catFinishRoundBtn = document.getElementById('cat-finish-round-btn');
+const catWritingError = document.getElementById('cat-writing-error');
+const catLeaveWritingBtn = document.getElementById('cat-leave-writing-btn');
+const catReviewCategoryName = document.getElementById('cat-review-category-name');
+const catReviewLetter = document.getElementById('cat-review-letter');
+const catReviewInfo = document.getElementById('cat-review-info');
+const catReviewList = document.getElementById('cat-review-list');
+const catReviewError = document.getElementById('cat-review-error');
+const catFinalizeCategoryBtn = document.getElementById('cat-finalize-category-btn');
+const catEndGameReviewBtn = document.getElementById('cat-end-game-review-btn');
+const catBetweenSummary = document.getElementById('cat-between-summary');
+const catRoundScoreboard = document.getElementById('cat-round-scoreboard');
+const catNextRoundBtn = document.getElementById('cat-next-round-btn');
+const catEndGameBetweenBtn = document.getElementById('cat-end-game-between-btn');
+const catFinalRoundScoreboard = document.getElementById('cat-final-round-scoreboard');
+const catFinalScoreboard = document.getElementById('cat-final-scoreboard');
+const catReturnLobbyBtn = document.getElementById('cat-return-lobby-btn');
+const catLeaveGameoverBtn = document.getElementById('cat-leave-gameover-btn');
+
+
+// --------------------------
+// Categories Game UI and events
+// --------------------------
+function getCategoriesRoom() {
+  return categoriesRoomCode || localStorage.getItem('categories-roomCode') || '';
+}
+
+function getCategoriesConfig(language = categoriesLanguage) {
+  return (categoriesConfig && categoriesConfig[language]) || {
+    letters: language === 'en' ? 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('') : ['ا', 'ب', 'ت', 'ث', 'ج', 'ح', 'خ', 'د', 'ذ', 'ر', 'ز', 'س', 'ش', 'ص', 'ض', 'ط', 'ظ', 'ع', 'غ', 'ف', 'ق', 'ك', 'ل', 'م', 'ن', 'ه', 'و', 'ي'],
+    defaultCategories: language === 'en' ? ['Name', 'Animal', 'Plant', 'Country', 'Object'] : ['اسم', 'حيوان', 'نبات', 'بلاد', 'جماد'],
+    suggestedCategories: language === 'en' ? ['Food', 'Celebrity', 'Job', 'Color', 'City', 'Sport', 'Movie/Show', 'Brand'] : ['أكلة', 'مشهور', 'مهنة', 'لون', 'مدينة', 'رياضة', 'فيلم/مسلسل', 'ماركة']
+  };
+}
+
+function normalizeCategoryNameForClient(name) {
+  return String(name || '').replace(/\s+/g, ' ').trim();
+}
+
+function collectCategoryNamesFromRows() {
+  return Array.from(document.querySelectorAll('.cat-category-name-input'))
+    .map(input => normalizeCategoryNameForClient(input.value))
+    .filter(Boolean);
+}
+
+function setCategoriesFromNames(names) {
+  const seen = new Set();
+  categoriesSelectedNames = names
+    .map(normalizeCategoryNameForClient)
+    .filter(Boolean)
+    .filter(name => {
+      const key = name.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 14);
+}
+
+function emitCategoriesSettingsUpdate() {
+  if (!categoriesRoomCode || !catHostControls || catHostControls.classList.contains('hidden')) return;
+  socket.emit('catUpdateSettings', {
+    roomCode: categoriesRoomCode,
+    language: catLanguageSelect.value,
+    maxRounds: catRoundCount.value,
+    categoryNames: collectCategoryNamesFromRows()
+  });
+}
+
+function renderCategoriesSettings(state) {
+  if (!catLanguageSelect) return;
+  const language = state?.language || catLanguageSelect.value || 'ar';
+  categoriesLanguage = language;
+  catLanguageSelect.value = language;
+  catRoundCount.value = state?.maxRounds || catRoundCount.value || 10;
+
+  if (categoriesSelectedNames.length === 0 && state?.categories?.length) {
+    setCategoriesFromNames(state.categories.map(category => category.name));
+  }
+  if (categoriesSelectedNames.length === 0) {
+    setCategoriesFromNames(getCategoriesConfig(language).defaultCategories);
+  }
+
+  const config = getCategoriesConfig(language);
+  catSuggestedCategories.innerHTML = '';
+  config.suggestedCategories.forEach(name => {
+    const button = createElement('button', 'category-chip', name);
+    button.type = 'button';
+    if (categoriesSelectedNames.some(item => item.toLowerCase() === name.toLowerCase())) button.classList.add('active');
+    button.addEventListener('click', () => {
+      const exists = categoriesSelectedNames.some(item => item.toLowerCase() === name.toLowerCase());
+      if (exists) {
+        setCategoriesFromNames(categoriesSelectedNames.filter(item => item.toLowerCase() !== name.toLowerCase()));
+      } else {
+        setCategoriesFromNames([...collectCategoryNamesFromRows(), name]);
+      }
+      renderCategoriesSettings({ ...state, language, maxRounds: catRoundCount.value });
+      emitCategoriesSettingsUpdate();
+    });
+    catSuggestedCategories.appendChild(button);
+  });
+
+  catSelectedCategories.innerHTML = '';
+  categoriesSelectedNames.forEach((name, index) => {
+    const row = createElement('div', 'category-list-row');
+    const input = document.createElement('input');
+    input.className = 'cat-category-name-input';
+    input.value = name;
+    input.dir = language === 'ar' ? 'rtl' : 'ltr';
+    input.addEventListener('input', () => {
+      categoriesSelectedNames[index] = input.value;
+    });
+    input.addEventListener('change', () => {
+      setCategoriesFromNames(collectCategoryNamesFromRows());
+      renderCategoriesSettings({ ...state, language, maxRounds: catRoundCount.value });
+      emitCategoriesSettingsUpdate();
+    });
+    const remove = createElement('button', 'danger-btn', 'Remove');
+    remove.type = 'button';
+    remove.addEventListener('click', () => {
+      categoriesSelectedNames.splice(index, 1);
+      renderCategoriesSettings({ ...state, language, maxRounds: catRoundCount.value });
+      emitCategoriesSettingsUpdate();
+    });
+    row.appendChild(input);
+    row.appendChild(remove);
+    catSelectedCategories.appendChild(row);
+  });
+}
+
+function renderCategoriesPlayerList(players, showScores = false) {
+  categoriesPlayers = players || [];
+  const me = categoriesPlayers.find(player => player.playerId === myPlayerId);
+  const amHost = Boolean(me?.isHost);
+  if (catPlayerList) catPlayerList.innerHTML = '';
+  categoriesPlayers.forEach(player => {
+    const item = document.createElement('li');
+    if (player.offline) item.classList.add('offline-player');
+    const name = createElement('span', '', showScores ? `${player.name} (${player.score || 0} pts)` : player.name);
+    name.dir = 'auto';
+    if (player.lockedThisRound) {
+      const locked = createElement('span', 'offline-tag', '(Locked)');
+      name.appendChild(locked);
+    } else if (player.offline) {
+      const offline = createElement('span', 'offline-tag', '(Offline)');
+      name.appendChild(offline);
+    }
+    item.appendChild(name);
+    if (player.isHost) item.appendChild(createElement('span', 'host-tag', 'HOST'));
+    catPlayerList?.appendChild(item);
+  });
+  if (catHostControls) catHostControls.classList.toggle('hidden', !amHost || categoriesStatus !== 'lobby');
+  return amHost;
+}
+
+function collectCategoriesAnswers() {
+  const answers = {};
+  document.querySelectorAll('.cat-answer-input').forEach(input => {
+    answers[input.dataset.categoryId] = input.value;
+  });
+  if (Object.keys(answers).length === 0 && categoriesCurrentState?.myAnswers) {
+    return { ...categoriesCurrentState.myAnswers };
+  }
+  return answers;
+}
+
+function emitCategoriesAnswerUpdate(force = false) {
+  if (!categoriesRoomCode || categoriesStatus !== 'writing') return;
+  if (categoriesCurrentState?.myLocked && !force) return;
+  const doEmit = () => socket.emit('catUpdateAnswers', { roomCode: categoriesRoomCode, answers: collectCategoriesAnswers() });
+  if (force) {
+    doEmit();
+    return;
+  }
+  clearTimeout(categoriesAnswerAutosaveTimer);
+  categoriesAnswerAutosaveTimer = setTimeout(doEmit, 180);
+}
+
+function renderCategoriesLetters(state) {
+  showScreen('cat-letter-screen', true);
+  rememberCategoriesRoom(state.roomCode);
+  const amPicker = state.isPicker;
+  const amHost = state.players.find(player => player.playerId === myPlayerId)?.isHost;
+  catLetterPickerLabel.textContent = amPicker
+    ? 'Your turn: choose an unused letter.'
+    : `${state.pickerName || 'The next player'} is choosing the letter.`;
+  catLetterHelp.textContent = `${state.languageLabel} mode. Round ${state.roundNumber + 1} of ${state.maxRounds}.`;
+  catLetterGrid.innerHTML = '';
+  state.allLetters.forEach(letter => {
+    const button = createElement('button', state.usedLetters.includes(letter) ? 'used' : '', letter);
+    button.type = 'button';
+    button.disabled = state.usedLetters.includes(letter) || !amPicker;
+    button.addEventListener('click', () => socket.emit('catChooseLetter', { roomCode: categoriesRoomCode, letter }));
+    catLetterGrid.appendChild(button);
+  });
+  catUsedLetters.textContent = state.usedLetters.length ? `Used letters: ${state.usedLetters.join('، ')}` : 'No letters used yet.';
+  catEndGameLetterBtn.classList.toggle('hidden', !amHost);
+}
+
+function renderCategoriesWriting(state) {
+  showScreen('cat-writing-screen', true);
+  catCurrentLetter.textContent = state.currentLetter || '-';
+  catRoundLabel.textContent = `Round ${state.roundNumber} / ${state.maxRounds}`;
+  const dir = state.textDirection === 'rtl' ? 'rtl' : 'ltr';
+  catAnswerGrid.dir = dir;
+  catAnswerGrid.innerHTML = '';
+  const locked = Boolean(state.myLocked);
+  catWritingLockWarning.classList.toggle('hidden', !locked);
+  catWritingLockWarning.textContent = locked
+    ? 'Your answers are locked because you left/refreshed during this active round or the round was locked. You can still join the review.'
+    : '';
+
+  state.categories.forEach(category => {
+    const row = createElement('div', 'answer-row');
+    const label = createElement('label', '', category.name);
+    label.dir = 'auto';
+    const input = document.createElement('input');
+    input.className = 'cat-answer-input';
+    input.dataset.categoryId = category.id;
+    input.value = state.myAnswers?.[category.id] || '';
+    input.maxLength = 80;
+    input.placeholder = state.language === 'ar' ? `كلمة تبدأ بحرف ${state.currentLetter}` : `Starts with ${state.currentLetter}`;
+    input.dir = dir;
+    input.disabled = locked;
+    input.addEventListener('input', () => emitCategoriesAnswerUpdate(false));
+    row.appendChild(label);
+    row.appendChild(input);
+    catAnswerGrid.appendChild(row);
+  });
+  catFinishRoundBtn.disabled = locked;
+}
+
+function renderCategoriesReview(state) {
+  showScreen('cat-review-screen', true);
+  const amHost = state.players.find(player => player.playerId === myPlayerId)?.isHost;
+  const review = state.reviewPayload;
+  if (!review) return;
+  catReviewCategoryName.textContent = review.categoryName;
+  catReviewCategoryName.dir = 'auto';
+  catReviewLetter.textContent = state.currentLetter || '-';
+  catReviewInfo.textContent = `Round ${state.roundNumber}. Votes are hidden while people vote. The answer owner cannot vote on their own answer.`;
+  catReviewList.innerHTML = '';
+  review.answers.forEach(answer => {
+    const card = createElement('div', 'review-answer-card');
+    if (answer.finalized) card.classList.add(answer.finalValid ? 'final-valid' : 'final-invalid');
+    const top = createElement('div', 'review-answer-top');
+    const left = document.createElement('div');
+    const playerName = createElement('div', '', answer.name);
+    playerName.style.fontWeight = '900';
+    playerName.dir = 'auto';
+    const answerText = createElement('div', 'review-answer-text', answer.answer || '—');
+    answerText.dir = 'auto';
+    left.appendChild(playerName);
+    left.appendChild(answerText);
+    const badges = document.createElement('div');
+    badges.appendChild(createElement('span', 'pill gray', `Suggested ${answer.suggestedScore}`));
+    if (answer.duplicate) badges.appendChild(createElement('span', 'pill yellow', 'Duplicate'));
+    if (answer.autoInvalidReason) badges.appendChild(createElement('span', 'pill yellow', answer.autoInvalidReason === 'empty' ? 'Empty' : 'Wrong letter'));
+    if (answer.finalized) badges.appendChild(createElement('span', answer.finalValid ? 'pill green' : 'pill yellow', `Final ${answer.finalScore}`));
+    top.appendChild(left);
+    top.appendChild(badges);
+    card.appendChild(top);
+
+    const voteInfo = createElement('p', 'small-note', answer.autoInvalidReason
+      ? 'Automatically 0 unless the host overrides after group discussion.'
+      : `Votes submitted: ${answer.submittedVotes}/${answer.eligibleVotes}. Live vote totals are hidden.`);
+    card.appendChild(voteInfo);
+
+    if (answer.canVote && !answer.finalized) {
+      const voteRow = createElement('div', 'vote-row');
+      const validBtn = createElement('button', answer.myVote === 'valid' ? '' : 'secondary-btn', answer.myVote === 'valid' ? 'Voted Valid' : 'Valid');
+      validBtn.type = 'button';
+      validBtn.addEventListener('click', () => socket.emit('catVoteAnswer', { roomCode: categoriesRoomCode, targetPlayerId: answer.playerId, vote: 'valid' }));
+      const invalidBtn = createElement('button', answer.myVote === 'invalid' ? 'danger-btn' : 'secondary-btn', answer.myVote === 'invalid' ? 'Voted Invalid' : 'Invalid');
+      invalidBtn.type = 'button';
+      invalidBtn.addEventListener('click', () => socket.emit('catVoteAnswer', { roomCode: categoriesRoomCode, targetPlayerId: answer.playerId, vote: 'invalid' }));
+      voteRow.appendChild(validBtn);
+      voteRow.appendChild(invalidBtn);
+      card.appendChild(voteRow);
+    }
+
+    if (amHost && !answer.finalized) {
+      const override = createElement('div', 'score-override');
+      override.appendChild(createElement('span', 'small-note', 'Host override:'));
+      const select = document.createElement('select');
+      [['', 'Auto / Vote'], ['10', '10'], ['5', '5'], ['0', '0']].forEach(([value, label]) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        select.appendChild(option);
+      });
+      select.value = answer.overrideScore === null || answer.overrideScore === undefined ? '' : String(answer.overrideScore);
+      select.addEventListener('change', () => socket.emit('catSetScoreOverride', { roomCode: categoriesRoomCode, targetPlayerId: answer.playerId, score: select.value }));
+      override.appendChild(select);
+      card.appendChild(override);
+    }
+
+    catReviewList.appendChild(card);
+  });
+  catFinalizeCategoryBtn.classList.toggle('hidden', !amHost);
+  catEndGameReviewBtn.classList.toggle('hidden', !amHost);
+}
+
+function renderRoundScoreboard(container, summary, options = {}) {
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (!summary || !Array.isArray(summary.scores) || summary.scores.length === 0) {
+    container.classList.add('hidden');
+    return;
+  }
+
+  container.classList.remove('hidden');
+
+  const title = createElement('h3', '', options.title || `Round ${summary.roundNumber} Scores`);
+  container.appendChild(title);
+
+  const noteParts = [];
+  if (summary.letter) noteParts.push(`Letter: ${summary.letter}`);
+  if (summary.lockedByName) noteParts.push(`Locked by: ${summary.lockedByName}`);
+  if (summary.penaltyApplied) noteParts.push('Finisher penalty applied');
+
+  if (noteParts.length) {
+    container.appendChild(createElement('p', 'small-note', noteParts.join(' • ')));
+  }
+
+  const table = document.createElement('table');
+  table.className = 'scoreboard-table';
+  table.innerHTML = '<thead><tr><th>Player</th><th>Round Score</th><th>Note</th></tr></thead>';
+  const body = document.createElement('tbody');
+
+  [...summary.scores].sort((a, b) => (b.score || 0) - (a.score || 0)).forEach(score => {
+    const row = document.createElement('tr');
+    const nameCell = document.createElement('td');
+    nameCell.textContent = score.name;
+    const scoreCell = document.createElement('td');
+    scoreCell.textContent = score.score || 0;
+    const noteCell = document.createElement('td');
+    noteCell.textContent = score.hadFinisherPenalty ? 'Finisher penalty (-10)' : '';
+    row.appendChild(nameCell);
+    row.appendChild(scoreCell);
+    row.appendChild(noteCell);
+    body.appendChild(row);
+  });
+
+  table.appendChild(body);
+  container.appendChild(table);
+}
+
+function renderCategoriesBetween(state) {
+  showScreen('cat-between-screen', true);
+  const summary = state.lastRoundSummary;
+  const lockerName = summary?.lockedByName ? `${summary.lockedByName} locked the round.` : 'Round complete.';
+  catBetweenSummary.textContent = `${lockerName} Round scores are shown below. The total leaderboard stays hidden until the end of the game.`;
+  renderRoundScoreboard(catRoundScoreboard, summary);
+  const amHost = state.players.find(player => player.playerId === myPlayerId)?.isHost;
+  catNextRoundBtn.classList.toggle('hidden', !amHost);
+  catEndGameBetweenBtn.classList.toggle('hidden', !amHost);
+}
+
+function renderCategoriesGameOver(state) {
+  showScreen('cat-gameover-screen', true);
+  renderRoundScoreboard(catFinalRoundScoreboard, state.lastRoundSummary, { title: 'Final Round Scores' });
+  const scores = [...(state.finalScores || [])].sort((a, b) => (b.score || 0) - (a.score || 0));
+  catFinalScoreboard.innerHTML = '';
+  if (scores.length === 0) {
+    catFinalScoreboard.appendChild(createElement('p', 'small-note', 'No scores yet.'));
+  } else {
+    const table = document.createElement('table');
+    table.className = 'scoreboard-table';
+    table.innerHTML = '<thead><tr><th>Rank</th><th>Player</th><th>Score</th></tr></thead>';
+    const body = document.createElement('tbody');
+    scores.forEach((score, index) => {
+      const row = document.createElement('tr');
+      row.innerHTML = `<td>${index + 1}</td><td></td><td>${score.score || 0}</td>`;
+      row.children[1].textContent = score.name;
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    catFinalScoreboard.appendChild(table);
+  }
+  const amHost = state.players.find(player => player.playerId === myPlayerId)?.isHost;
+  catReturnLobbyBtn.classList.toggle('hidden', !amHost);
+}
+
+function handleCategoriesState(state) {
+  categoriesCurrentState = state;
+  categoriesStatus = state.status;
+  categoriesLanguage = state.language;
+  categoriesConfig = state.gameConfig || categoriesConfig;
+  rememberCategoriesRoom(state.roomCode);
+  setActiveGame('categories');
+  const amHost = renderCategoriesPlayerList(state.players, state.status === 'gameOver');
+
+  if (state.status === 'lobby') {
+    showScreen('cat-lobby-screen', true);
+    setMessage(catLobbyStatus, state.players.length < 2 ? 'Waiting for at least one more player...' : 'Ready to start.');
+    categoriesSelectedNames = state.categories.map(category => category.name);
+    renderCategoriesSettings(state);
+    catHostControls.classList.toggle('hidden', !amHost);
+    return;
+  }
+  if (state.status === 'letter') return renderCategoriesLetters(state);
+  if (state.status === 'writing') return renderCategoriesWriting(state);
+  if (state.status === 'review') return renderCategoriesReview(state);
+  if (state.status === 'between') return renderCategoriesBetween(state);
+  if (state.status === 'gameOver') return renderCategoriesGameOver(state);
+}
+
+function leaveCategoriesRoom() {
+  categoriesLocallyLeaving = true;
+  intentionallyLeftRoom = true;
+  if (categoriesRoomCode) socket.emit('catLeaveRoom', categoriesRoomCode);
+  localStorage.removeItem('categories-roomCode');
+  categoriesRoomCode = '';
+  categoriesStatus = 'lobby';
+  categoriesCurrentState = null;
+  categoriesSelectedNames = [];
+  resetSetupButtons();
+  showGameSelect();
+  setTimeout(() => { categoriesLocallyLeaving = false; }, 500);
+}
+
+catCreateRoomBtn.addEventListener('click', () => {
+  const name = catPlayerNameInput.value.trim();
+  if (!name) return setMessage(catSetupError, 'Please enter a name first.');
+  setMessage(catSetupError, '');
+  catCreateRoomBtn.disabled = true;
+  catCreateRoomBtn.textContent = 'Creating...';
+  intentionallyLeftRoom = false;
+  categoriesLocallyLeaving = false;
+  saveName(name);
+  setActiveGame('categories');
+  socket.emit('catCreateRoom', { name, playerId: myPlayerId });
+});
+
+catJoinRoomBtn.addEventListener('click', () => {
+  const name = catPlayerNameInput.value.trim();
+  const code = catRoomCodeInput.value.trim().toUpperCase();
+  if (!name) return setMessage(catSetupError, 'Please enter a name first.');
+  if (!code) return setMessage(catSetupError, 'Please enter a room code.');
+  setMessage(catSetupError, '');
+  catJoinRoomBtn.disabled = true;
+  catJoinRoomBtn.textContent = 'Joining...';
+  intentionallyLeftRoom = false;
+  categoriesLocallyLeaving = false;
+  saveName(name);
+  setActiveGame('categories');
+  socket.emit('catJoinRoom', { roomCode: code, playerName: name, playerId: myPlayerId });
+});
+
+catLanguageSelect.addEventListener('change', () => {
+  setCategoriesFromNames(getCategoriesConfig(catLanguageSelect.value).defaultCategories);
+  renderCategoriesSettings({ language: catLanguageSelect.value, maxRounds: catRoundCount.value });
+  emitCategoriesSettingsUpdate();
+});
+catRoundCount.addEventListener('change', emitCategoriesSettingsUpdate);
+catUseDefaultsBtn.addEventListener('click', () => {
+  setCategoriesFromNames(getCategoriesConfig(catLanguageSelect.value).defaultCategories);
+  renderCategoriesSettings({ language: catLanguageSelect.value, maxRounds: catRoundCount.value });
+  emitCategoriesSettingsUpdate();
+});
+catClearCategoriesBtn.addEventListener('click', () => {
+  setCategoriesFromNames([]);
+  renderCategoriesSettings({ language: catLanguageSelect.value, maxRounds: catRoundCount.value });
+  emitCategoriesSettingsUpdate();
+});
+catAddCategoryBtn.addEventListener('click', () => {
+  const value = normalizeCategoryNameForClient(catCustomCategoryInput.value);
+  if (!value) return;
+  setCategoriesFromNames([...collectCategoryNamesFromRows(), value]);
+  catCustomCategoryInput.value = '';
+  renderCategoriesSettings({ language: catLanguageSelect.value, maxRounds: catRoundCount.value });
+  emitCategoriesSettingsUpdate();
+});
+catCustomCategoryInput.addEventListener('keydown', event => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    catAddCategoryBtn.click();
+  }
+});
+catStartGameBtn.addEventListener('click', () => {
+  const names = collectCategoryNamesFromRows();
+  if (names.length === 0) return setMessage(catLobbyError, 'Please add at least one category.');
+  setMessage(catLobbyError, '');
+  socket.emit('catStartGame', {
+    roomCode: categoriesRoomCode,
+    language: catLanguageSelect.value,
+    maxRounds: catRoundCount.value,
+    categoryNames: names
+  });
+});
+catFinishRoundBtn.addEventListener('click', () => {
+  if (!confirm('Finish and lock the round for everyone? If one of your answers gets 0, you receive a -10 penalty.')) return;
+  emitCategoriesAnswerUpdate(true);
+  socket.emit('catFinishRound', { roomCode: categoriesRoomCode, answers: collectCategoriesAnswers() });
+});
+catFinalizeCategoryBtn.addEventListener('click', () => socket.emit('catFinalizeCategory', categoriesRoomCode));
+catNextRoundBtn.addEventListener('click', () => socket.emit('catNextRound', categoriesRoomCode));
+catEndGameLetterBtn.addEventListener('click', () => socket.emit('catEndGame', categoriesRoomCode));
+catEndGameReviewBtn.addEventListener('click', () => socket.emit('catEndGame', categoriesRoomCode));
+catEndGameBetweenBtn.addEventListener('click', () => socket.emit('catEndGame', categoriesRoomCode));
+catReturnLobbyBtn.addEventListener('click', () => socket.emit('catReturnToLobby', categoriesRoomCode));
+[catLeaveLobbyBtn, catLeaveLetterBtn, catLeaveWritingBtn, catLeaveGameoverBtn].forEach(button => {
+  if (button) button.addEventListener('click', leaveCategoriesRoom);
+});
+
+socket.on('catState', state => {
+  resetSetupButtons();
+  setMessage(catSetupError, '');
+  setMessage(catLobbyError, '');
+  setMessage(catLetterError, '');
+  setMessage(catWritingError, '');
+  setMessage(catReviewError, '');
+  handleCategoriesState(state);
+});
+
+socket.on('catErrorMsg', message => {
+  resetSetupButtons();
+  setMessage(catSetupError, message);
+  setMessage(catLobbyError, message);
+  setMessage(catLetterError, message);
+  setMessage(catWritingError, message);
+  setMessage(catReviewError, message);
+});
+
 // --------------------------
 // Admin DOM elements
 // --------------------------
@@ -269,6 +850,7 @@ const savedName = getSavedName();
 if (savedName) {
   playerNameInput.value = savedName;
   gwPlayerNameInput.value = savedName;
+  if (catPlayerNameInput) catPlayerNameInput.value = savedName;
 }
 
 // --------------------------
@@ -283,6 +865,8 @@ function resetSetupButtons() {
   gwCreateRoomBtn.textContent = 'Create Guess Who Room';
   gwJoinRoomBtn.disabled = false;
   gwJoinRoomBtn.textContent = 'Join Guess Who Room';
+  if (catCreateRoomBtn) { catCreateRoomBtn.disabled = false; catCreateRoomBtn.textContent = 'Create Categories Room'; }
+  if (catJoinRoomBtn) { catJoinRoomBtn.disabled = false; catJoinRoomBtn.textContent = 'Join Categories Room'; }
 }
 
 function getActiveRoomCode() {
@@ -291,6 +875,10 @@ function getActiveRoomCode() {
 
 function getActiveGuessWhoRoomCode() {
   return guessWhoRoomCode || localStorage.getItem('guesswho-roomCode') || '';
+}
+
+function getActiveCategoriesRoomCode() {
+  return categoriesRoomCode || localStorage.getItem('categories-roomCode') || '';
 }
 
 function rememberRoom(code) {
@@ -311,26 +899,40 @@ function rememberGuessWhoRoom(code) {
   gwGameRoomCode.textContent = code;
 }
 
+function rememberCategoriesRoom(code) {
+  if (!code) return;
+  categoriesRoomCode = code;
+  localStorage.setItem('categories-roomCode', code);
+  localStorage.setItem('party-activeGame', 'categories');
+  if (catDisplayRoomCode) catDisplayRoomCode.textContent = code;
+  if (catLetterRoomCode) catLetterRoomCode.textContent = code;
+}
+
 function requestCurrentState() {
   if (intentionallyLeftRoom) return;
 
   let activeGame = localStorage.getItem('party-activeGame');
   const imposterRoom = getActiveRoomCode();
   const guessWhoRoom = getActiveGuessWhoRoomCode();
+  const categoriesRoom = getActiveCategoriesRoomCode();
 
   // Be forgiving after refreshes or old localStorage states. The old site only had
   // imposter rooms, so some browsers may have an imposter room saved without
   // party-activeGame being set.
   if (!activeGame) {
+    activeGame = categoriesRoom ? 'categories' : (guessWhoRoom ? 'guessWho' : (imposterRoom ? 'imposter' : ''));
+  }
+
+  if (activeGame === 'categories' && !categoriesRoom) {
     activeGame = guessWhoRoom ? 'guessWho' : (imposterRoom ? 'imposter' : '');
   }
 
-  if (activeGame === 'guessWho' && !guessWhoRoom && imposterRoom) {
-    activeGame = 'imposter';
+  if (activeGame === 'guessWho' && !guessWhoRoom) {
+    activeGame = categoriesRoom ? 'categories' : (imposterRoom ? 'imposter' : '');
   }
 
-  if (activeGame === 'imposter' && !imposterRoom && guessWhoRoom) {
-    activeGame = 'guessWho';
+  if (activeGame === 'imposter' && !imposterRoom) {
+    activeGame = categoriesRoom ? 'categories' : (guessWhoRoom ? 'guessWho' : '');
   }
 
   if (!socket.connected) {
@@ -341,6 +943,11 @@ function requestCurrentState() {
   const now = Date.now();
   if (now - lastStateSyncRequest < 300) return;
   lastStateSyncRequest = now;
+
+  if (activeGame === 'categories' && categoriesRoom) {
+    socket.emit('catSyncState', { roomCode: categoriesRoom, playerId: myPlayerId });
+    return;
+  }
 
   if (activeGame === 'guessWho' && guessWhoRoom) {
     socket.emit('gwSyncState', { roomCode: guessWhoRoom, playerId: myPlayerId });
@@ -354,9 +961,11 @@ function requestCurrentState() {
 
 function recoverFromMobileResume() {
   const activeGame = localStorage.getItem('party-activeGame');
-  const hasActiveRoom = activeGame === 'guessWho'
-    ? getActiveGuessWhoRoomCode()
-    : (getActiveRoomCode() || getActiveGuessWhoRoomCode());
+  const hasActiveRoom = activeGame === 'categories'
+    ? getActiveCategoriesRoomCode()
+    : (activeGame === 'guessWho'
+      ? getActiveGuessWhoRoomCode()
+      : (getActiveRoomCode() || getActiveGuessWhoRoomCode() || getActiveCategoriesRoomCode()));
   if (!hasActiveRoom || intentionallyLeftRoom) return;
 
   const timeHidden = Date.now() - lastVisibilityChange;
@@ -381,6 +990,10 @@ socket.io.on('reconnect', () => {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     lastVisibilityChange = Date.now();
+    if (localStorage.getItem('party-activeGame') === 'categories' && categoriesStatus === 'writing' && !categoriesLocallyLeaving) {
+      emitCategoriesAnswerUpdate(true);
+      socket.emit('catLockSelf', { roomCode: categoriesRoomCode, answers: collectCategoriesAnswers() });
+    }
     return;
   }
   recoverFromMobileResume();
