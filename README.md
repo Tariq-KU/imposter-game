@@ -1,9 +1,10 @@
 # Cryptic Hub
 
-A real-time browser party game site with two game modes:
+A real-time browser party game site with three game modes:
 
 - Imposter Game
 - Guess Who
+- Categories
 
 ## Setup
 
@@ -29,6 +30,50 @@ Open the site at:
 ```text
 http://localhost:3000
 ```
+
+## Categories game
+
+The Categories mode supports Arabic and English play. The host chooses the language, number of rounds, and categories before starting.
+
+Default Arabic categories:
+
+```text
+اسم
+حيوان
+نبات
+بلاد
+جماد
+```
+
+Default English categories:
+
+```text
+Name
+Animal
+Plant
+Country
+Object
+```
+
+Rules implemented:
+
+- 2 to 10 players.
+- Default game length is 10 rounds.
+- Each round uses a unique letter.
+- Letter picker rotates between players.
+- First player to finish locks the round for everyone.
+- Leaving or refreshing during the active writing phase locks only that player.
+- Arabic checking normalizes forms of alif (`أ`, `إ`, `آ`, `ا`) and ignores leading `ال`.
+- `ى` and `ي` are treated as different letters.
+- `ة` and `ه` are treated as different letters.
+- Empty or wrong-letter answers are automatically 0.
+- Duplicate valid answers are suggested as 5 points.
+- Unique valid answers are suggested as 10 points.
+- Players vote secretly on validity; owners cannot vote on their own answer.
+- Host can override scores after discussion.
+- The finisher receives one -10 penalty if any of their answers receive 0.
+- Total scores are hidden until the game ends.
+
 
 ## Guess Who character folders
 

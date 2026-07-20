@@ -1,7 +1,7 @@
 {
   "name": "cryptic-hub",
   "version": "2.0.0",
-  "description": "A real-time party game hub with Imposter and Guess Who modes",
+  "description": "A real-time party game hub with Imposter, Guess Who, and Categories modes",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
